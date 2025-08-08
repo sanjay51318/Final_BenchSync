@@ -1,0 +1,13 @@
+John Smith
+Software Developer
+
+SKILLS:
+- Python
+- JavaScript  
+- React
+- SQL
+
+EXPERIENCE:
+Software Developer at Tech Corp (2020-2024)
+- Developed web applications
+- Worked with databases

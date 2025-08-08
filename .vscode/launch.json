@@ -1,0 +1,35 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Consultant Profiling Server",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/mcp_servers/consultant_profiling_server.py",
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Bench Tracking Server",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/mcp_servers/bench_tracking_server.py",
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Project Matching Server",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/mcp_servers/project_matching_server.py",
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        }
+    ]
+}
