@@ -1,0 +1,462 @@
+import React, { useState, useEffect } from 'react';
+import UploadResume from '@/components/UploadResume';
+import { useAuth } from '@/contexts/AuthContext';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Link } from 'react-router-dom';
+import { 
+  Users, 
+  TrendingUp, 
+  Calendar, 
+  GraduationCap,
+  ArrowRight,
+  Shield,
+  FileText
+} from 'lucide-react';
+
+// Dashboard data structure
+interface ConsultantDashboardData {
+  consultant_name: string;
+  consultant_email: string;
+  resume_status: string;
+  opportunities_count: number;
+  attendance_rate: number;
+  training_progress: number;
+  training_status: string;
+  workflow_steps: Array<{
+    id: string;
+    label: string;
+    completed: boolean;
+    inProgress: boolean;
+  }>;
+  skills: string[];
+  match_score: number;
+  last_resume_update: string | null;
+}
+
+interface AdminDashboardData {
+  totalConsultants: number;
+  benchConsultants: number;
+  activeAssignments: number;
+  openOpportunities: number;
+}
+
+export default function Home() {
+  const { user } = useAuth();
+  const isConsultant = user?.role === 'consultant';
+
+  // State for real dashboard data
+  const [dashboardData, setDashboardData] = useState<ConsultantDashboardData | null>(null);
+  const [adminMetrics, setAdminMetrics] = useState<AdminDashboardData | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch consultant dashboard data if user is consultant, admin metrics if admin
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      setLoading(true);
+      try {
+        if (isConsultant && user?.email) {
+          // Fetch consultant data
+          const response = await fetch(`http://localhost:8000/api/consultant/dashboard/${user.email}`);
+          if (response.ok) {
+            const data = await response.json();
+            setDashboardData(data);
+          } else {
+            console.error('Failed to fetch consultant dashboard data');
+          }
+        } else {
+          // Fetch admin metrics
+          const response = await fetch(`http://localhost:8000/api/dashboard/metrics`);
+          if (response.ok) {
+            const data = await response.json();
+            setAdminMetrics(data);
+          } else {
+            console.error('Failed to fetch admin metrics');
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, [isConsultant, user?.email]);
+
+  // Separate function for manual refresh (e.g., after upload)
+  const fetchConsultantDashboard = async () => {
+    if (!user?.email) return;
+    
+    setLoading(true);
+    try {
+      const response = await fetch(`http://localhost:8000/api/consultant/dashboard/${user.email}`);
+      if (response.ok) {
+        const data = await response.json();
+        setDashboardData(data);
+      } else {
+        console.error('Failed to fetch consultant dashboard data');
+      }
+    } catch (error) {
+      console.error('Error fetching consultant dashboard:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper function to get resume status styling
+  const getResumeStatusStyle = (status: string) => {
+    if (status === 'updated') {
+      return {
+        cardClass: "bg-gradient-to-br from-status-completed/10 to-status-completed/5 border-status-completed/20",
+        textClass: "text-status-completed",
+        iconClass: "text-status-completed"
+      };
+    } else {
+      return {
+        cardClass: "bg-gradient-to-br from-status-missed/10 to-status-missed/5 border-status-missed/20",
+        textClass: "text-status-missed",
+        iconClass: "text-status-missed"
+      };
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Welcome Header */}
+      <div className="text-center py-8 bg-gradient-to-r from-primary/10 via-primary/5 to-primary/10 rounded-lg border">
+        <h1 className="text-4xl font-bold text-foreground mb-2">
+          Welcome to Pool CMS
+        </h1>
+        <p className="text-xl text-muted-foreground mb-4">
+          Your comprehensive consultant management system
+        </p>
+        <Badge className="bg-primary text-primary-foreground text-sm px-4 py-1">
+          {isConsultant ? 'Consultant Portal' : 'Administrator Dashboard'}
+        </Badge>
+      </div>
+
+      {/* Quick Stats */}
+      {isConsultant ? (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Resume Status - Dynamic */}
+            <Card className={loading ? "bg-gradient-to-br from-muted/10 to-muted/5 border-muted/20" : 
+              getResumeStatusStyle(dashboardData?.resume_status || 'not updated').cardClass}>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Resume Status</p>
+                    <p className={`text-2xl font-bold ${loading ? 'text-muted-foreground' : 
+                      getResumeStatusStyle(dashboardData?.resume_status || 'not updated').textClass}`}>
+                      {loading ? 'Loading...' : 
+                        dashboardData?.resume_status === 'updated' ? 'Updated' : 'Not Updated'}
+                    </p>
+                  </div>
+                  <FileText className={`h-8 w-8 ${loading ? 'text-muted-foreground' :
+                    getResumeStatusStyle(dashboardData?.resume_status || 'not updated').iconClass}`} aria-hidden="true" />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Attendance Rate - Dynamic */}
+            <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Attendance Rate</p>
+                    <p className="text-2xl font-bold text-primary">
+                      {loading ? 'Loading...' : `${dashboardData?.attendance_rate || 0}%`}
+                    </p>
+                  </div>
+                  <Calendar className="h-8 w-8 text-primary" aria-hidden="true" />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Opportunities Count - Dynamic */}
+            <Card className="bg-gradient-to-br from-status-in-progress/10 to-status-in-progress/5 border-status-in-progress/20">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Opportunities</p>
+                    <p className="text-2xl font-bold text-status-in-progress">
+                      {loading ? 'Loading...' : dashboardData?.opportunities_count || 0}
+                    </p>
+                  </div>
+                  <TrendingUp className="h-8 w-8 text-status-in-progress" aria-hidden="true" />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Training Progress - Dynamic */}
+            <Card className="bg-gradient-to-br from-status-pending/10 to-status-pending/5 border-status-pending/20">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Training Progress</p>
+                    <p className="text-2xl font-bold text-status-pending">
+                      {loading ? 'Loading...' : `${Math.round(dashboardData?.training_progress || 0)}%`}
+                    </p>
+                  </div>
+                  <GraduationCap className="h-8 w-8 text-status-pending" aria-hidden="true" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Dynamic Workflow Progress */}
+          {dashboardData && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-primary" />
+                  Dashboard Workflow Progress
+                </CardTitle>
+                <CardDescription>
+                  Complete all steps to optimize your bench period - {Math.round(dashboardData.training_progress)}% complete
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {dashboardData.workflow_steps.map((step, index) => (
+                    <div key={step.id} className="flex items-center space-x-3">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                        step.completed 
+                          ? 'bg-status-completed text-white' 
+                          : step.inProgress 
+                            ? 'bg-status-in-progress text-white'
+                            : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {index + 1}
+                      </div>
+                      <div className="flex-1">
+                        <p className={`font-medium ${
+                          step.completed 
+                            ? 'text-status-completed' 
+                            : step.inProgress 
+                              ? 'text-status-in-progress'
+                              : 'text-muted-foreground'
+                        }`}>
+                          {step.label}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {step.completed 
+                            ? 'Completed' 
+                            : step.inProgress 
+                              ? 'In Progress'
+                              : 'Pending'
+                          }
+                        </p>
+                      </div>
+                      <div className={`w-4 h-4 rounded-full ${
+                        step.completed 
+                          ? 'bg-status-completed' 
+                          : step.inProgress 
+                            ? 'bg-status-in-progress'
+                            : 'bg-muted'
+                      }`} />
+                    </div>
+                  ))}
+                </div>
+                {/* Progress Bar */}
+                <div className="mt-6">
+                  <div className="flex justify-between text-sm text-muted-foreground mb-2">
+                    <span>Overall Progress</span>
+                    <span>{Math.round(dashboardData.training_progress)}%</span>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-2">
+                    <div 
+                      className="bg-primary h-2 rounded-full transition-all duration-500"
+                      style={{ width: `${dashboardData.training_progress}%` }}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Upload Resume Section */}
+          <UploadResume onUploadSuccess={fetchConsultantDashboard} />
+        </>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Total Consultants</p>
+                  <p className="text-2xl font-bold text-primary">
+                    {loading ? 'Loading...' : adminMetrics?.totalConsultants || 0}
+                  </p>
+                </div>
+                <Users className="h-8 w-8 text-primary" aria-hidden="true" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-status-in-progress/10 to-status-in-progress/5 border-status-in-progress/20">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">On Bench</p>
+                  <p className="text-2xl font-bold text-status-in-progress">
+                    {loading ? 'Loading...' : adminMetrics?.benchConsultants || 0}
+                  </p>
+                </div>
+                <Calendar className="h-8 w-8 text-status-in-progress" aria-hidden="true" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-status-missed/10 to-status-missed/5 border-status-missed/20">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Active Assignments</p>
+                  <p className="text-2xl font-bold text-status-missed">
+                    {loading ? 'Loading...' : adminMetrics?.activeAssignments || 0}
+                  </p>
+                </div>
+                <Shield className="h-8 w-8 text-status-missed" aria-hidden="true" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Quick Actions */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Quick Actions</CardTitle>
+            <CardDescription>
+              {isConsultant ? 'Manage your bench activities' : 'Administrative functions'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {isConsultant ? (
+              <>
+                <Button asChild className="w-full justify-between">
+                  <Link to="/consultant-dashboard">
+                    View My Dashboard
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className="w-full justify-between">
+                  <Link to="/profile">
+                    Update Profile & Resume
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className="w-full justify-between">
+                  <Link to="/reports">
+                    View My Reports
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button asChild className="w-full justify-between">
+                  <Link to="/admin-dashboard">
+                    Admin Console
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className="w-full justify-between">
+                  <Link to="/reports">
+                    Generate Reports
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Recent Activity / Alerts */}
+        <Card>
+          <CardHeader>
+            <CardTitle>{isConsultant ? 'Recent Activity' : 'Recent Alerts'}</CardTitle>
+            <CardDescription>
+              {isConsultant ? 'Your latest activities and updates' : 'Items requiring your attention'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {isConsultant ? (
+                <div className="text-center py-4">
+                  <p className="text-sm text-muted-foreground">
+                    Recent activity will be displayed here based on your interactions with the system.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-start space-x-3 p-3 bg-muted/30 rounded-lg">
+                    <div className="w-2 h-2 rounded-full mt-2 bg-status-missed" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">System Alert</p>
+                      <p className="text-xs text-muted-foreground">
+                        {adminMetrics?.benchConsultants || 0} consultants currently on bench
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start space-x-3 p-3 bg-muted/30 rounded-lg">
+                    <div className="w-2 h-2 rounded-full mt-2 bg-status-completed" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Active Assignments</p>
+                      <p className="text-xs text-muted-foreground">
+                        {adminMetrics?.activeAssignments || 0} consultants currently assigned
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start space-x-3 p-3 bg-muted/30 rounded-lg">
+                    <div className="w-2 h-2 rounded-full mt-2 bg-status-in-progress" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Open Opportunities</p>
+                      <p className="text-xs text-muted-foreground">
+                        {adminMetrics?.openOpportunities || 0} projects available for assignment
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Upcoming Sessions */}
+      {isConsultant && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5 text-primary" />
+              Upcoming Training Sessions
+            </CardTitle>
+            <CardDescription>Your scheduled learning sessions this week</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 border rounded-lg hover:bg-muted/30 transition-colors">
+                <h4 className="font-medium text-foreground">React Advanced Patterns</h4>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Aug 22, 2025 at 10:00 AM
+                </p>
+              </div>
+              <div className="p-4 border rounded-lg hover:bg-muted/30 transition-colors">
+                <h4 className="font-medium text-foreground">System Design Workshop</h4>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Aug 24, 2025 at 2:00 PM
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}

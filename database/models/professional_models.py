@@ -48,6 +48,7 @@ class ConsultantProfile(Base):
     resume_analyses = relationship("ResumeAnalysis", back_populates="consultant")
     skills = relationship("ConsultantSkill", back_populates="consultant")
     feedbacks = relationship("ResumeFeedback", back_populates="consultant")
+    applications = relationship("OpportunityApplication", back_populates="consultant")
 
 class AttendanceRecord(Base):
     __tablename__ = 'attendance_records'
@@ -180,6 +181,9 @@ class ProjectOpportunity(Base):
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    applications = relationship("OpportunityApplication", back_populates="opportunity")
 
 class OpportunityApplication(Base):
     __tablename__ = 'opportunity_applications'
@@ -187,14 +191,19 @@ class OpportunityApplication(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     consultant_id = Column(Integer, ForeignKey('consultant_profiles.id'), nullable=False)
     opportunity_id = Column(Integer, ForeignKey('project_opportunities.id'), nullable=False)
-    status = Column(String(50), default='pending')  # 'pending' | 'accepted' | 'declined' | 'interview' | 'selected'
-    application_date = Column(DateTime, default=datetime.utcnow)
+    status = Column(String(50), default='applied')  # 'applied' | 'interview' | 'selected' | 'rejected'
+    cover_letter = Column(Text)
+    application_data = Column(JSON)  # Store additional application information
     match_score = Column(Float, default=0.0)  # AI-calculated match score
     ai_reasoning = Column(Text)  # AI explanation for the match
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    opportunity = relationship("ProjectOpportunity", back_populates="applications")
+    consultant = relationship("ConsultantProfile", back_populates="applications")
 
 class TrainingRecord(Base):
     __tablename__ = 'training_records'
@@ -228,3 +237,145 @@ class BenchMetrics(Base):
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+# Enhanced Training and Certification Models
+
+class TrainingCategory(Base):
+    __tablename__ = 'training_categories'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True)
+    description = Column(Text)
+    icon = Column(String(50))  # For UI display
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    programs = relationship("TrainingProgram", back_populates="category")
+
+class TrainingProgram(Base):
+    __tablename__ = 'training_programs'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    category_id = Column(Integer, ForeignKey('training_categories.id'), nullable=False)
+    provider = Column(String(200))
+    duration_hours = Column(Integer, default=40)
+    difficulty_level = Column(String(50))  # 'beginner', 'intermediate', 'advanced'
+    prerequisites = Column(JSON)  # List of required skills
+    learning_objectives = Column(JSON)  # List of learning goals
+    cost = Column(Float, default=0.0)
+    certification_available = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    category = relationship("TrainingCategory", back_populates="programs")
+    enrollments = relationship("TrainingEnrollment", back_populates="program")
+
+class TrainingEnrollment(Base):
+    __tablename__ = 'training_enrollments'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    consultant_id = Column(Integer, ForeignKey('consultant_profiles.id'), nullable=False)
+    program_id = Column(Integer, ForeignKey('training_programs.id'), nullable=False)
+    enrollment_date = Column(DateTime, default=datetime.utcnow)
+    start_date = Column(DateTime)
+    target_completion_date = Column(DateTime)
+    actual_completion_date = Column(DateTime)
+    status = Column(String(50), default='enrolled')  # 'enrolled', 'in_progress', 'completed', 'dropped', 'on_hold'
+    progress_percentage = Column(Float, default=0.0)
+    time_spent_hours = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    program = relationship("TrainingProgram", back_populates="enrollments")
+    consultant = relationship("ConsultantProfile", foreign_keys=[consultant_id])
+    progress_records = relationship("TrainingProgress", back_populates="enrollment")
+
+class TrainingProgress(Base):
+    __tablename__ = 'training_progress'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    enrollment_id = Column(Integer, ForeignKey('training_enrollments.id'), nullable=False)
+    milestone = Column(String(200))
+    progress_percentage = Column(Float, nullable=False)
+    time_spent_hours = Column(Float, default=0.0)
+    notes = Column(Text)
+    recorded_date = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    enrollment = relationship("TrainingEnrollment", back_populates="progress_records")
+
+class TrainingRecommendation(Base):
+    __tablename__ = 'training_recommendations'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    consultant_id = Column(Integer, ForeignKey('consultant_profiles.id'), nullable=False)
+    program_id = Column(Integer, ForeignKey('training_programs.id'), nullable=False)
+    recommendation_reason = Column(Text)
+    priority_score = Column(Float, default=0.0)  # 0-1 scale
+    skill_gaps_addressed = Column(JSON)  # List of skills this training addresses
+    recommended_date = Column(DateTime, default=datetime.utcnow)
+    status = Column(String(50), default='pending')  # 'pending', 'accepted', 'declined', 'expired'
+    
+    # Relationships
+    consultant = relationship("ConsultantProfile", foreign_keys=[consultant_id])
+    program = relationship("TrainingProgram", foreign_keys=[program_id])
+
+class Certification(Base):
+    __tablename__ = 'certifications'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    consultant_id = Column(Integer, ForeignKey('consultant_profiles.id'), nullable=False)
+    name = Column(String(200), nullable=False)
+    issuing_organization = Column(String(200))
+    issue_date = Column(DateTime)
+    expiration_date = Column(DateTime)
+    credential_id = Column(String(100))
+    verification_url = Column(String(500))
+    skills_validated = Column(JSON)  # List of skills this certification validates
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    consultant = relationship("ConsultantProfile", foreign_keys=[consultant_id])
+
+class SkillDevelopmentPlan(Base):
+    __tablename__ = 'skill_development_plans'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    consultant_id = Column(Integer, ForeignKey('consultant_profiles.id'), nullable=False)
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    target_skills = Column(JSON)  # List of skills to develop
+    current_skills = Column(JSON)  # Current skill levels
+    recommended_trainings = Column(JSON)  # List of recommended training program IDs
+    timeline_weeks = Column(Integer, default=12)
+    status = Column(String(50), default='active')  # 'active', 'completed', 'on_hold', 'cancelled'
+    progress_percentage = Column(Float, default=0.0)
+    created_date = Column(DateTime, default=datetime.utcnow)
+    target_completion_date = Column(DateTime)
+    actual_completion_date = Column(DateTime)
+    
+    # Relationships
+    consultant = relationship("ConsultantProfile", foreign_keys=[consultant_id])
+
+class OpportunitySkillGap(Base):
+    __tablename__ = 'opportunity_skill_gaps'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    consultant_id = Column(Integer, ForeignKey('consultant_profiles.id'), nullable=False)
+    opportunity_id = Column(Integer, ForeignKey('project_opportunities.id'), nullable=False)
+    missing_skills = Column(JSON)  # List of skills consultant is missing for this opportunity
+    skill_gap_analysis = Column(JSON)  # Detailed analysis of gaps
+    viewed_at = Column(DateTime, default=datetime.utcnow)  # When consultant viewed this opportunity
+    could_not_apply = Column(Boolean, default=True)  # Whether they couldn't apply due to skill gaps
+    gap_severity = Column(String(20), default='medium')  # 'low', 'medium', 'high' - how many critical skills missing
+    opportunity_priority = Column(String(20), default='medium')  # How attractive this opportunity was
+    
+    # Relationships
+    consultant = relationship("ConsultantProfile", foreign_keys=[consultant_id])
+    opportunity = relationship("ProjectOpportunity", foreign_keys=[opportunity_id])

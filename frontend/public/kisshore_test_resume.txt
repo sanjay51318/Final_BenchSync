@@ -1,0 +1,34 @@
+CONSULTANT RESUME
+
+Name: Kisshore Test Consultant
+Email: kisshore@company.com
+Role: Senior Software Engineer
+
+TECHNICAL SKILLS:
+- React, TypeScript, JavaScript
+- Python, Django, Flask
+- AWS, Docker, Kubernetes
+- PostgreSQL, MongoDB
+- Git, CI/CD, Jenkins
+
+EXPERIENCE:
+Senior Software Engineer (2020-2024)
+- Built responsive web applications using React and TypeScript
+- Developed REST APIs using Python and Django
+- Deployed applications on AWS with Docker containers
+- Managed database operations with PostgreSQL
+- Implemented CI/CD pipelines using Jenkins
+
+Software Engineer (2018-2020)
+- Created frontend components with modern JavaScript
+- Worked with NoSQL databases like MongoDB
+- Collaborated with DevOps teams on containerization
+- Participated in agile development processes
+
+EDUCATION:
+Bachelor of Computer Science
+Technology University (2014-2018)
+
+CERTIFICATIONS:
+- AWS Certified Developer
+- React Developer Certification
