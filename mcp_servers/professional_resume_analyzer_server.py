@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Professional Resume Analyzer MCP Server
-Handles resume analysis with AI/ML capabilities via JSON-RPC
+Handles resume analysis with Resume_Agent.ipynb AI pipeline via JSON-RPC
 """
 import asyncio
 import json
@@ -10,98 +10,52 @@ import os
 import sys
 from typing import Any, Dict, List, Optional
 import traceback
+from pathlib import Path
 
-# Set environment variables before importing TensorFlow-dependent modules
-os.environ["TRANSFORMERS_BACKEND"] = "pt"
-os.environ["USE_TF"] = "0"
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Force CPU usage
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-# Disable TensorFlow entirely
-import sys
-sys.modules['tensorflow'] = None
+# Add the project root to the path for imports
+current_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(current_dir))
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("resume-analyzer-server")
 
-# AI/ML dependencies with fallback
-HAS_AI_CAPABILITIES = False
+# Import Resume_Agent core from correct path
 try:
-    # Import in specific order to avoid conflicts
-    import torch
-    torch.set_num_threads(1)  # Limit threads to avoid conflicts
-    
-    import numpy as np
-    
-    # Import transformers with explicit backend
-    import transformers
-    transformers.utils.logging.set_verbosity_error()
-    from transformers import pipeline, AutoTokenizer, AutoModel
-    
-    from sentence_transformers import SentenceTransformer
-    
-    import nltk
-    from nltk.corpus import stopwords
-    from nltk.tokenize import word_tokenize
-    
-    HAS_AI_CAPABILITIES = True
-    logger.info("✅ AI capabilities loaded successfully")
+    from agents.resume_agent.agent import ResumeAnalysisAgent
+    HAS_RESUME_AGENT = True
+    logger.info("✅ Resume_Agent core imported successfully")
 except Exception as e:
-    logger.warning(f"⚠️ AI capabilities not available: {str(e)}")
-    HAS_AI_CAPABILITIES = False
+    logger.warning(f"⚠️ Resume_Agent core not available: {str(e)}")
+    HAS_RESUME_AGENT = False
 
 class ProfessionalResumeAnalyzerServer:
-    """Professional Resume Analyzer with AI capabilities"""
+    """Professional Resume Analyzer with Resume_Agent.ipynb AI Pipeline"""
     
     def __init__(self):
         self.ai_models = {}
+        self.resume_agent = None
         self.initialize_ai_models()
         logger.info("✅ Professional Resume Analyzer Server initialized")
     
     def initialize_ai_models(self):
-        """Initialize AI models if available"""
-        if not HAS_AI_CAPABILITIES:
-            logger.warning("⚠️ AI models not available, using fallback analysis")
-            return
-            
+        """Initialize AI models using Resume_Agent core"""
         try:
-            logger.info("🔄 Initializing AI models...")
-            
-            # Initialize NER model for extracting entities
-            logger.info("Loading BERT NER model...")
-            self.ai_models['ner'] = pipeline(
-                "ner", 
-                model="dbmdz/bert-large-cased-finetuned-conll03-english",
-                aggregation_strategy="simple",
-                device=-1,  # Use CPU
-                framework="pt"  # Force PyTorch
-            )
-            
-            # Initialize sentence transformer for semantic analysis
-            logger.info("Loading SentenceTransformer model...")
-            self.ai_models['embeddings'] = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
-            
-            # Download NLTK data if needed
-            try:
-                nltk.data.find('tokenizers/punkt')
-            except LookupError:
-                logger.info("Downloading NLTK punkt data...")
-                nltk.download('punkt', quiet=True)
-            
-            try:
-                nltk.data.find('corpora/stopwords')
-            except LookupError:
-                logger.info("Downloading NLTK stopwords data...")
-                nltk.download('stopwords', quiet=True)
-            
-            logger.info("✅ AI models initialized successfully")
-            
+            if HAS_RESUME_AGENT:
+                self.resume_agent = ResumeAnalysisAgent()
+                if self.resume_agent.models_loaded:
+                    self.ai_models["resume_agent"] = True
+                    logger.info("✅ Resume_Agent AI pipeline loaded successfully")
+                else:
+                    logger.warning("❌ Resume_Agent AI pipeline failed to load - models not available")
+                    self.ai_models["resume_agent"] = False
+            else:
+                logger.warning("❌ Resume_Agent core not available")
+                self.ai_models["resume_agent"] = False
         except Exception as e:
             logger.error(f"❌ AI model initialization failed: {str(e)}")
             logger.error(f"Error details: {traceback.format_exc()}")
-            self.ai_models = {}
+            self.ai_models["resume_agent"] = False
     
     async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Handle MCP tool requests"""
@@ -172,15 +126,22 @@ class ProfessionalResumeAnalyzerServer:
             }
     
     async def analyze_resume(self, resume_text: str, filename: str = "resume.txt") -> Dict[str, Any]:
-        """Analyze resume with AI-powered analysis"""
+        """Analyze resume using Resume_Agent.ipynb AI pipeline"""
         try:
-            if self.ai_models:
-                return await self._ai_analysis(resume_text, filename)
+            logger.info(f"Starting resume analysis for {filename}")
+            
+            if self.resume_agent and self.resume_agent.models_loaded:
+                # Use the exact Resume_Agent.ipynb pipeline
+                result = self.resume_agent.analyze_resume_full_pipeline(resume_text, filename)
+                logger.info(f"Resume analyzed using Resume_Agent AI pipeline: {len(result.get('skills', []))} skills found")
+                return result
             else:
+                # Fallback to basic analysis if Resume_Agent not available
+                logger.warning("Resume_Agent not available, falling back to basic analysis")
                 return self._fallback_analysis(resume_text, filename)
                 
         except Exception as e:
-            logger.error(f"Resume analysis failed: {str(e)}")
+            logger.error(f"Resume analysis failed: {e}")
             return self._fallback_analysis(resume_text, filename)
     
     async def _ai_analysis(self, resume_text: str, filename: str) -> Dict[str, Any]:

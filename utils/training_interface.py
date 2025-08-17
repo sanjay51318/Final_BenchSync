@@ -16,7 +16,7 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class ProfessionalTrainingClient:
+class TrainingMCPClient:
     """Client interface for training services via MCP Server"""
     
     def __init__(self):
@@ -28,7 +28,7 @@ class ProfessionalTrainingClient:
             "professional_training_server.py"
         )
         self.python_path = "C:/Users/Sanjay N/anaconda3/python.exe"  # Use Anaconda Python
-        logger.info("✅ Professional Training Client initialized")
+        logger.info("Training MCP Client initialized")
     
     async def _communicate_with_server(self, request: Dict) -> Dict:
         """Send request to MCP server and get response"""
@@ -268,7 +268,7 @@ class ProfessionalTrainingClient:
             }
 
 # Global client instance
-training_client = ProfessionalTrainingClient()
+training_client = TrainingMCPClient()
 
 # Export for use in backend
-__all__ = ["training_client", "ProfessionalTrainingClient"]
+__all__ = ["training_client", "TrainingMCPClient"]

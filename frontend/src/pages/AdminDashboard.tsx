@@ -13,13 +13,29 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Users, Briefcase, FileText, TrendingUp, Plus, Edit, Trash2, UserPlus, X } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Users, Briefcase, FileText, TrendingUp, Plus, Edit, Trash2, UserPlus, X, MessageSquare, Send } from "lucide-react";
 import { ConsultantFilter } from "@/components/Admin/ConsultantFilter";
 import { ConsultantTable } from "@/components/Admin/ConsultantTable";
 import { AIAgentQueue } from "@/components/Admin/AIAgentQueue";
 
 // API configuration
 const API_BASE_URL = 'http://localhost:8000';
+
+interface AttendanceRecord {
+  date: string;
+  status: string;
+  check_in: string | null;
+  check_out: string | null;
+}
+
+// Types for chatbot responses
+interface AttendanceUser {
+  name: string;
+  email: string;
+  check_in?: string;
+  status: string;
+}
 
 // Interface for API data
 interface DashboardMetrics {
@@ -72,13 +88,18 @@ interface Assignment {
 const AdminDashboard: React.FC = () => {
   const [showReport, setShowReport] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
-  const [showAddConsultant, setShowAddConsultant] = useState(false);
   const [showConsultantTable, setShowConsultantTable] = useState(false);
+  const [showAttendanceChatbot, setShowAttendanceChatbot] = useState(false);
+  const [showAddConsultant, setShowAddConsultant] = useState(false);
   const [dashboardMetrics, setDashboardMetrics] = useState<DashboardMetrics | null>(null);
   const [consultants, setConsultants] = useState<Consultant[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Temporary variables for the form elements that still exist in JSX (will be cleaned up)
+  const [newSkill, setNewSkill] = useState('');
+  const [newSoftSkill, setNewSoftSkill] = useState('');
   const [addingConsultant, setAddingConsultant] = useState(false);
-  const [newConsultant, setNewConsultant] = useState<NewConsultantForm>({
+  const [newConsultant, setNewConsultant] = useState({
     name: '',
     email: '',
     phone: '',
@@ -86,12 +107,15 @@ const AdminDashboard: React.FC = () => {
     experience_years: 0,
     department: '',
     primary_skill: '',
-    skills: [],
-    soft_skills: [],
+    skills: [] as string[],
+    soft_skills: [] as string[],
     availability_status: 'available'
   });
-  const [newSkill, setNewSkill] = useState('');
-  const [newSoftSkill, setNewSoftSkill] = useState('');
+  
+  // Attendance Chatbot state
+  const [chatbotMessages, setChatbotMessages] = useState<Array<{id: number, type: 'user' | 'bot', message: string, timestamp: Date}>>([]);
+  const [chatbotInput, setChatbotInput] = useState('');
+  const [chatbotLoading, setChatbotLoading] = useState(false);
 
   // Fetch data from API
   const fetchDashboardData = async () => {
@@ -122,55 +146,298 @@ const AdminDashboard: React.FC = () => {
     fetchDashboardData();
   }, []);
 
-  // Add new consultant
-  const handleAddConsultant = async () => {
-    if (!newConsultant.name || !newConsultant.email || !newConsultant.primary_skill) {
-      alert('Please fill in all required fields');
+  // Delete consultant
+  const handleDeleteConsultant = async (consultantId: string) => {
+    if (!confirm('Are you sure you want to delete this consultant?')) {
       return;
     }
 
-    setAddingConsultant(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/consultants`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...newConsultant,
-          status: 'active',
-          attendance_rate: 100,
-          training_status: 'not-started'
-        }),
+      const response = await fetch(`${API_BASE_URL}/api/consultants/${consultantId}`, {
+        method: 'DELETE',
       });
 
       if (response.ok) {
-        // Reset form
-        setNewConsultant({
-          name: '',
-          email: '',
-          phone: '',
-          location: '',
-          experience_years: 0,
-          department: '',
-          primary_skill: '',
-          skills: [],
-          soft_skills: [],
-          availability_status: 'available'
-        });
-        setShowAddConsultant(false);
-        // Refresh data to show new consultant
         await fetchDashboardData();
-        alert('Consultant added successfully!');
+        alert('Consultant deleted successfully!');
       } else {
-        const error = await response.json();
-        alert(`Failed to add consultant: ${error.detail || 'Unknown error'}`);
+        alert('Failed to delete consultant');
       }
     } catch (error) {
-      console.error('Error adding consultant:', error);
-      alert('Failed to add consultant. Please try again.');
+      console.error('Error deleting consultant:', error);
+      alert('Failed to delete consultant. Please try again.');
+    }
+  };
+
+  // Handle attendance chatbot query
+  const handleChatbotQuery = async () => {
+    if (!chatbotInput.trim()) return;
+
+    const userMessage = {
+      id: Date.now(),
+      type: 'user' as const,
+      message: chatbotInput.trim(),
+      timestamp: new Date()
+    };
+
+    setChatbotMessages(prev => [...prev, userMessage]);
+    setChatbotLoading(true);
+    
+    const currentInput = chatbotInput;
+    setChatbotInput('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/attendance/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: currentInput })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Format the response properly
+        let formattedMessage = '';
+        
+        if (typeof data.response === 'string') {
+          formattedMessage = data.response;
+        } else if (data.response && typeof data.response === 'object') {
+          // Handle structured response from chatbot
+          if (data.response.error) {
+            formattedMessage = data.response.error;
+          } else if (data.response.message && data.response.data) {
+            // Format structured data into readable message
+            const responseData = data.response.data;
+            let message = data.response.message + '\n\n';
+            
+            if (data.response.type === 'today_summary') {
+              message += `**Today's Stats:**\n`;
+              message += `• Total Consultants: ${responseData.total_consultants}\n`;
+              message += `• Present: ${responseData.present_count}\n`;
+              message += `• Absent: ${responseData.absent_count}\n`;
+              message += `• Attendance Rate: ${responseData.attendance_rate}%\n\n`;
+              
+              if (responseData.present_users && responseData.present_users.length > 0) {
+                message += `**Present Today:**\n`;
+                responseData.present_users.forEach((user: AttendanceUser) => {
+                  message += `• ${user.name} (${user.check_in || 'No check-in time'})\n`;
+                });
+              }
+              
+              if (responseData.late_users && responseData.late_users.length > 0) {
+                message += `\n**Late Arrivals:**\n`;
+                responseData.late_users.forEach((user: AttendanceUser) => {
+                  message += `• ${user.name} (${user.check_in})\n`;
+                });
+              }
+            } else if (data.response.type === 'personal_stats') {
+              message += `**${responseData.user_name} Attendance:**\n`;
+              message += `• Attendance Rate: ${responseData.attendance_rate}%\n`;
+              message += `• Present Days: ${responseData.present_days}\n`;
+              message += `• Absent Days: ${responseData.absent_days}\n`;
+              message += `• Leave Days: ${responseData.leave_days}\n`;
+              if (responseData.recent_records && responseData.recent_records.length > 0) {
+                message += `\n**Recent Records:**\n`;
+                responseData.recent_records.slice(0, 5).forEach((record: AttendanceRecord) => {
+                  message += `• ${record.date}: ${record.status}`;
+                  if (record.check_in) message += ` (${record.check_in} - ${record.check_out || 'N/A'})`;
+                  message += `\n`;
+                });
+              }
+            } else if (data.response.type === 'personal_attendance') {
+              message += `**Your Attendance:**\n`;
+              message += `• Attendance Rate: ${responseData.attendance_rate}%\n`;
+              message += `• Present Days: ${responseData.present_days}\n`;
+              message += `• Absent Days: ${responseData.absent_days}\n`;
+              message += `• Leave Days: ${responseData.leave_days}\n`;
+            } else if (data.response.type === 'help') {
+              message = data.response.message + '\n\n';
+              if (data.response.data && data.response.data.suggestions) {
+                message += '**Try these examples:**\n';
+                data.response.data.suggestions.forEach((suggestion: string) => {
+                  message += `• ${suggestion}\n`;
+                });
+              }
+            } else if (data.response.type === 'error') {
+              message = `Error: ${data.response.message}`;
+              if (data.response.data && data.response.data.person_searched) {
+                message += `\n\nTip: Try using the exact name as it appears in the system.`;
+              }
+            } else {
+              // Generic formatting for other response types
+              message += JSON.stringify(responseData, null, 2);
+            }
+            
+            formattedMessage = message;
+          } else {
+            formattedMessage = JSON.stringify(data.response, null, 2);
+          }
+        } else {
+          formattedMessage = 'I received an unexpected response format.';
+        }
+        
+        const botMessage = {
+          id: Date.now() + 1,
+          type: 'bot' as const,
+          message: formattedMessage,
+          timestamp: new Date()
+        };
+        setChatbotMessages(prev => [...prev, botMessage]);
+      } else {
+        const errorMessage = {
+          id: Date.now() + 1,
+          type: 'bot' as const,
+          message: 'Sorry, I encountered an error processing your request.',
+          timestamp: new Date()
+        };
+        setChatbotMessages(prev => [...prev, errorMessage]);
+      }
+    } catch (error) {
+      console.error('Chatbot error:', error);
+      const errorMessage = {
+        id: Date.now() + 1,
+        type: 'bot' as const,
+        message: 'Sorry, I could not connect to the attendance system.',
+        timestamp: new Date()
+      };
+      setChatbotMessages(prev => [...prev, errorMessage]);
     } finally {
-      setAddingConsultant(false);
+      setChatbotLoading(false);
+    }
+  };
+
+  // Handle quick question selection
+  const handleQuickQuestion = async (question: string) => {
+    setChatbotInput(question);
+    
+    const userMessage = {
+      id: Date.now(),
+      type: 'user' as const,
+      message: question,
+      timestamp: new Date()
+    };
+
+    setChatbotMessages(prev => [...prev, userMessage]);
+    setChatbotLoading(true);
+    setChatbotInput('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/attendance/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Format the response properly
+        let formattedMessage = '';
+        
+        if (typeof data.response === 'string') {
+          formattedMessage = data.response;
+        } else if (data.response && typeof data.response === 'object') {
+          // Handle structured response from chatbot
+          if (data.response.error) {
+            formattedMessage = data.response.error;
+          } else if (data.response.message && data.response.data) {
+            // Format structured data into readable message
+            const responseData = data.response.data;
+            let message = data.response.message + '\n\n';
+            
+            if (data.response.type === 'today_summary') {
+              message += `**Today's Stats:**\n`;
+              message += `• Total Consultants: ${responseData.total_consultants}\n`;
+              message += `• Present: ${responseData.present_count}\n`;
+              message += `• Absent: ${responseData.absent_count}\n`;
+              message += `• Attendance Rate: ${responseData.attendance_rate}%\n\n`;
+              
+              if (responseData.present_users && responseData.present_users.length > 0) {
+                message += `**Present Today:**\n`;
+                responseData.present_users.forEach((user: AttendanceUser) => {
+                  message += `• ${user.name} (${user.check_in || 'No check-in time'})\n`;
+                });
+              }
+              
+              if (responseData.late_users && responseData.late_users.length > 0) {
+                message += `\n**Late Arrivals:**\n`;
+                responseData.late_users.forEach((user: AttendanceUser) => {
+                  message += `• ${user.name} (${user.check_in})\n`;
+                });
+              }
+            } else if (data.response.type === 'personal_stats') {
+              message += `**${responseData.user_name} Attendance:**\n`;
+              message += `• Attendance Rate: ${responseData.attendance_rate}%\n`;
+              message += `• Present Days: ${responseData.present_days}\n`;
+              message += `• Absent Days: ${responseData.absent_days}\n`;
+              message += `• Leave Days: ${responseData.leave_days}\n`;
+              if (responseData.recent_records && responseData.recent_records.length > 0) {
+                message += `\n**Recent Records:**\n`;
+                responseData.recent_records.slice(0, 5).forEach((record: AttendanceRecord) => {
+                  message += `• ${record.date}: ${record.status}`;
+                  if (record.check_in) message += ` (${record.check_in} - ${record.check_out || 'N/A'})`;
+                  message += `\n`;
+                });
+              }
+            } else if (data.response.type === 'personal_attendance') {
+              message += `**Your Attendance:**\n`;
+              message += `• Attendance Rate: ${responseData.attendance_rate}%\n`;
+              message += `• Present Days: ${responseData.present_days}\n`;
+              message += `• Absent Days: ${responseData.absent_days}\n`;
+              message += `• Leave Days: ${responseData.leave_days}\n`;
+            } else if (data.response.type === 'help') {
+              message = data.response.message + '\n\n';
+              if (data.response.data && data.response.data.suggestions) {
+                message += '**Try these examples:**\n';
+                data.response.data.suggestions.forEach((suggestion: string) => {
+                  message += `• ${suggestion}\n`;
+                });
+              }
+            } else if (data.response.type === 'error') {
+              message = `Error: ${data.response.message}`;
+              if (data.response.data && data.response.data.person_searched) {
+                message += `\n\nTip: Try using the exact name as it appears in the system.`;
+              }
+            } else {
+              // Generic formatting for other response types
+              message += JSON.stringify(responseData, null, 2);
+            }
+            
+            formattedMessage = message;
+          } else {
+            formattedMessage = JSON.stringify(data.response, null, 2);
+          }
+        } else {
+          formattedMessage = 'I received an unexpected response format.';
+        }
+        
+        const botMessage = {
+          id: Date.now() + 1,
+          type: 'bot' as const,
+          message: formattedMessage,
+          timestamp: new Date()
+        };
+        setChatbotMessages(prev => [...prev, botMessage]);
+      } else {
+        const errorMessage = {
+          id: Date.now() + 1,
+          type: 'bot' as const,
+          message: 'Sorry, I encountered an error processing your request.',
+          timestamp: new Date()
+        };
+        setChatbotMessages(prev => [...prev, errorMessage]);
+      }
+    } catch (error) {
+      console.error('Chatbot error:', error);
+      const errorMessage = {
+        id: Date.now() + 1,
+        type: 'bot' as const,
+        message: 'Sorry, I could not connect to the attendance system.',
+        timestamp: new Date()
+      };
+      setChatbotMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setChatbotLoading(false);
     }
   };
 
@@ -212,27 +479,9 @@ const AdminDashboard: React.FC = () => {
     }));
   };
 
-  // Delete consultant
-  const handleDeleteConsultant = async (consultantId: string) => {
-    if (!confirm('Are you sure you want to delete this consultant?')) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/consultants/${consultantId}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        await fetchDashboardData();
-        alert('Consultant deleted successfully!');
-      } else {
-        alert('Failed to delete consultant');
-      }
-    } catch (error) {
-      console.error('Error deleting consultant:', error);
-      alert('Failed to delete consultant. Please try again.');
-    }
+  // Handle add consultant (simplified)
+  const handleAddConsultant = async () => {
+    alert('Add consultant functionality has been simplified. Please contact admin to add new consultants.');
   };
 
   // Generate dynamic metrics array from API data
@@ -354,14 +603,6 @@ const AdminDashboard: React.FC = () => {
         <h2 className="text-xl font-semibold">Quick Actions</h2>
         <div className="flex flex-wrap gap-4">
           <Button 
-            variant="default" 
-            onClick={() => setShowAddConsultant(!showAddConsultant)}
-            className="flex items-center gap-2"
-          >
-            <UserPlus className="h-4 w-4" />
-            Add New Consultant
-          </Button>
-          <Button 
             variant="outline" 
             onClick={() => setShowConsultantTable(!showConsultantTable)}
             className="flex items-center gap-2"
@@ -369,203 +610,120 @@ const AdminDashboard: React.FC = () => {
             <Users className="h-4 w-4" />
             Manage Consultants
           </Button>
-          <Button variant="outline" onClick={() => setShowReport(!showReport)}>
-            Generate Report
-          </Button>
-          <Button variant="ghost" onClick={() => setShowLogs(!showLogs)}>
-            View Activity Logs
-          </Button>
-          <Button variant="outline" onClick={fetchDashboardData}>
-            Refresh Data
+          <Button 
+            variant="default" 
+            onClick={() => setShowAttendanceChatbot(!showAttendanceChatbot)}
+            className="flex items-center gap-2"
+          >
+            <MessageSquare className="h-4 w-4" />
+            Attendance Chatbot
           </Button>
         </div>
 
-        {/* Add New Consultant Form */}
-        {showAddConsultant && (
+        {/* Attendance Chatbot */}
+        {showAttendanceChatbot && (
           <Card className="mt-4">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <UserPlus className="h-5 w-5" />
-                Add New Consultant
+                <MessageSquare className="h-5 w-5" />
+                Attendance Chatbot
               </CardTitle>
               <CardDescription>
-                Add a new consultant to the database with complete profile information
+                Ask questions about any consultant's attendance by name - get instant percentages and stats
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Basic Information */}
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="name">Full Name *</Label>
-                    <Input
-                      id="name"
-                      value={newConsultant.name}
-                      onChange={(e) => setNewConsultant(prev => ({ ...prev, name: e.target.value }))}
-                      placeholder="Enter full name"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="email">Email *</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={newConsultant.email}
-                      onChange={(e) => setNewConsultant(prev => ({ ...prev, email: e.target.value }))}
-                      placeholder="Enter email address"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="phone">Phone</Label>
-                    <Input
-                      id="phone"
-                      value={newConsultant.phone}
-                      onChange={(e) => setNewConsultant(prev => ({ ...prev, phone: e.target.value }))}
-                      placeholder="Enter phone number"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="location">Location</Label>
-                    <Input
-                      id="location"
-                      value={newConsultant.location}
-                      onChange={(e) => setNewConsultant(prev => ({ ...prev, location: e.target.value }))}
-                      placeholder="Enter location"
-                    />
-                  </div>
-                </div>
-
-                {/* Professional Information */}
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="experience">Experience (Years) *</Label>
-                    <Input
-                      id="experience"
-                      type="number"
-                      value={newConsultant.experience_years}
-                      onChange={(e) => setNewConsultant(prev => ({ ...prev, experience_years: parseInt(e.target.value) || 0 }))}
-                      placeholder="Years of experience"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="department">Department *</Label>
-                    <Select value={newConsultant.department} onValueChange={(value) => setNewConsultant(prev => ({ ...prev, department: value }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select department" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Engineering">Engineering</SelectItem>
-                        <SelectItem value="Data Science">Data Science</SelectItem>
-                        <SelectItem value="Product Management">Product Management</SelectItem>
-                        <SelectItem value="Design">Design</SelectItem>
-                        <SelectItem value="Marketing">Marketing</SelectItem>
-                        <SelectItem value="Sales">Sales</SelectItem>
-                        <SelectItem value="Operations">Operations</SelectItem>
-                        <SelectItem value="Finance">Finance</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="primary_skill">Primary Skill *</Label>
-                    <Input
-                      id="primary_skill"
-                      value={newConsultant.primary_skill}
-                      onChange={(e) => setNewConsultant(prev => ({ ...prev, primary_skill: e.target.value }))}
-                      placeholder="e.g., React, Python, Project Management"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="availability">Availability Status</Label>
-                    <Select value={newConsultant.availability_status} onValueChange={(value) => setNewConsultant(prev => ({ ...prev, availability_status: value }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select availability" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="available">Available</SelectItem>
-                        <SelectItem value="busy">Busy</SelectItem>
-                        <SelectItem value="on_leave">On Leave</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Skills Section */}
+            <CardContent>
               <div className="space-y-4">
-                <div>
-                  <Label htmlFor="skills">Technical Skills</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="skills"
-                      value={newSkill}
-                      onChange={(e) => setNewSkill(e.target.value)}
-                      placeholder="Add technical skill"
-                      onKeyPress={(e) => e.key === 'Enter' && addSkill()}
-                    />
-                    <Button type="button" onClick={addSkill} size="sm">
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {newConsultant.skills.map((skill, index) => (
-                      <Badge key={index} variant="secondary" className="flex items-center gap-1">
-                        {skill}
-                        <X 
-                          className="h-3 w-3 cursor-pointer" 
-                          onClick={() => removeSkill(skill)}
-                        />
-                      </Badge>
-                    ))}
-                  </div>
+                {/* Chat Messages */}
+                <div className="h-64 overflow-y-auto border rounded p-4 space-y-3 bg-muted/20">
+                  {chatbotMessages.length === 0 ? (
+                    <div className="text-center text-muted-foreground">
+                      Ask me about any consultant's attendance! Try questions like:
+                      <ul className="mt-2 text-sm space-y-1">
+                        <li>• "What is John Doe's attendance percentage?"</li>
+                        <li>• "Show Sarah Wilson attendance"</li>
+                        <li>• "How is Mike Johnson's attendance?"</li>
+                        <li>• "What is Kisshore Kumar attendance like?"</li>
+                      </ul>
+                    </div>
+                  ) : (
+                    chatbotMessages.map((msg) => (
+                      <div key={msg.id} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[80%] p-3 rounded-lg ${
+                          msg.type === 'user' 
+                            ? 'bg-primary text-primary-foreground ml-4' 
+                            : 'bg-secondary mr-4'
+                        }`}>
+                          <div className="text-sm">{msg.message}</div>
+                          <div className="text-xs opacity-70 mt-1">
+                            {msg.timestamp.toLocaleTimeString()}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {chatbotLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-secondary p-3 rounded-lg mr-4">
+                        <div className="text-sm">Typing...</div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div>
-                  <Label htmlFor="soft_skills">Soft Skills</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="soft_skills"
-                      value={newSoftSkill}
-                      onChange={(e) => setNewSoftSkill(e.target.value)}
-                      placeholder="Add soft skill"
-                      onKeyPress={(e) => e.key === 'Enter' && addSoftSkill()}
-                    />
-                    <Button type="button" onClick={addSoftSkill} size="sm">
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {newConsultant.soft_skills.map((skill, index) => (
-                      <Badge key={index} variant="outline" className="flex items-center gap-1">
-                        {skill}
-                        <X 
-                          className="h-3 w-3 cursor-pointer" 
-                          onClick={() => removeSoftSkill(skill)}
-                        />
-                      </Badge>
-                    ))}
-                  </div>
+                {/* Chat Input */}
+                <div className="flex gap-2">
+                  <Textarea
+                    value={chatbotInput}
+                    onChange={(e) => setChatbotInput(e.target.value)}
+                    placeholder="Ask about any consultant's attendance... (e.g., 'John Doe attendance')"
+                    className="flex-1 resize-none"
+                    rows={2}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleChatbotQuery();
+                      }
+                    }}
+                  />
+                  <Button 
+                    onClick={handleChatbotQuery}
+                    disabled={!chatbotInput.trim() || chatbotLoading}
+                    className="self-end"
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
                 </div>
-              </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-4 pt-4">
-                <Button 
-                  onClick={handleAddConsultant} 
-                  disabled={addingConsultant}
-                  className="flex items-center gap-2"
-                >
-                  {addingConsultant ? 'Adding...' : 'Add Consultant'}
-                </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={() => setShowAddConsultant(false)}
-                >
-                  Cancel
-                </Button>
+                {/* Quick Question Options */}
+                <div className="flex flex-wrap gap-2">
+                  <span className="text-sm text-muted-foreground">Quick questions:</span>
+                  {[
+                    'What is John Doe\'s attendance percentage?',
+                    'Show Sarah Wilson attendance',
+                    'How is Mike Johnson\'s attendance?',
+                    'What is Kisshore Kumar attendance like?',
+                    'Who has the best attendance?'
+                  ].map((question) => (
+                    <Button
+                      key={question}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleQuickQuestion(question)}
+                      className="text-xs"
+                      disabled={chatbotLoading}
+                    >
+                      {question}
+                    </Button>
+                  ))}
+                </div>
               </div>
             </CardContent>
           </Card>
         )}
+
+        {/* Add New Consultant Form - REMOVED FOR SIMPLIFIED DASHBOARD */}
+          
 
         {/* Consultant Management Table */}
         {showConsultantTable && (

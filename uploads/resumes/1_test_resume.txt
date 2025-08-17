@@ -1,29 +1,36 @@
 John Doe
-Software Engineer
-
-SKILLS:
-- Python programming
-- JavaScript and React development
-- SQL and PostgreSQL database management
-- AWS cloud services
-- Docker containerization
-- Git version control
-- Machine Learning basics
-- Django web framework
+Senior Software Engineer
 
 EXPERIENCE:
 Senior Software Engineer at TechCorp (2020-2025)
-- Developed web applications using Python and Django
-- Built responsive frontend interfaces with React
-- Managed PostgreSQL databases and optimized queries
-- Deployed applications on AWS using Docker containers
-- Collaborated with teams using Git for version control
+- Developed scalable web applications using Python, Django, and React
+- Built RESTful APIs and microservices using FastAPI and PostgreSQL
+- Implemented CI/CD pipelines with Docker, Kubernetes, and Jenkins
+- Led a team of 5 developers in agile development environment
+- Deployed applications on AWS cloud infrastructure using Terraform
+- Collaborated with cross-functional teams to deliver high-quality software
+
+Software Developer at StartupInc (2018-2020) 
+- Built responsive frontend applications using JavaScript, React, and Vue.js
+- Developed backend services with Node.js, Express.js, and MongoDB
+- Integrated third-party APIs and payment gateways
+- Implemented automated testing with Jest and Cypress
+- Participated in code reviews and mentoring junior developers
+
+SKILLS:
+Programming Languages: Python, JavaScript, TypeScript, Java, SQL
+Frontend: React, Vue.js, Angular, HTML5, CSS3, Bootstrap, Tailwind CSS
+Backend: Django, FastAPI, Node.js, Express.js, Spring Boot
+Databases: PostgreSQL, MySQL, MongoDB, Redis
+Cloud & DevOps: AWS, Docker, Kubernetes, Jenkins, Terraform, Git
+Machine Learning: TensorFlow, PyTorch, scikit-learn, Pandas, NumPy
+Tools: Git, VS Code, IntelliJ, Postman, Jira, Slack
 
 EDUCATION:
 Bachelor of Science in Computer Science
-University of Technology (2016-2020)
+University of Technology (2014-2018)
 
 PROJECTS:
-- E-commerce platform using Django and React
-- Data analysis tool with Python and Machine Learning
-- Cloud infrastructure automation with AWS and Docker
+E-commerce Platform - Built full-stack e-commerce solution with React frontend and Django backend
+Real-time Chat Application - Developed WebSocket-based chat app using Node.js and Socket.io
+ML Recommendation System - Created personalized recommendation engine using Python and TensorFlow

@@ -10,6 +10,18 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { differenceInDays, parseISO } from "date-fns";
+import { 
+  BarChart3, 
+  TrendingUp, 
+  Users, 
+  Clock, 
+  CheckCircle, 
+  AlertCircle,
+  Loader2,
+  Eye,
+  Activity,
+  Target
+} from 'lucide-react';
 
 // API configuration
 const API_BASE_URL = 'http://localhost:8000';
@@ -43,6 +55,62 @@ interface Application {
   status: 'pending' | 'accepted' | 'declined';
   applied_date: string;
   match_score?: number;
+}
+
+// Enhanced consultant interface
+interface Consultant {
+  id: string;
+}
+
+// Analytics interface
+interface OpportunityAnalytics {
+  success: boolean;
+  analytics: {
+    overview: {
+      total_opportunities: number;
+      open_opportunities: number;
+      closed_opportunities: number;
+      in_progress_opportunities: number;
+      total_applications: number;
+      pending_applications: number;
+      accepted_applications: number;
+      declined_applications: number;
+      overall_success_rate: number;
+    };
+    opportunity_details: Array<{
+      opportunity_id: string;
+      title: string;
+      company: string;
+      total_applications: number;
+      pending_applications: number;
+      accepted_applications: number;
+      declined_applications: number;
+      match_rate: number;
+      status: string;
+      created_date: string;
+    }>;
+    consultant_engagement: Array<{
+      consultant_id: string;
+      name: string;
+      email: string;
+      total_applications: number;
+      accepted_applications: number;
+      pending_applications: number;
+      success_rate: number;
+      status: string;
+    }>;
+    skills_demand: {
+      top_skills: Array<{ skill: string; demand_count: number }>;
+      total_unique_skills: number;
+    };
+    market_trends: {
+      opportunities_created_last_30_days: number;
+      applications_last_30_days: number;
+      average_time_to_fill: string;
+      most_active_companies: Array<{ company: string; opportunities: number }>;
+    };
+    last_updated: string;
+  };
 }
 
 // Enhanced consultant interface
@@ -98,6 +166,29 @@ const OpportunitiesAdmin: React.FC = () => {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
   const pageSize = 5;
+
+  // Analytics state
+  const [analytics, setAnalytics] = useState<OpportunityAnalytics | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+
+  // Fetch analytics data
+  const fetchAnalytics = async () => {
+    try {
+      setAnalyticsLoading(true);
+      const response = await fetch(`${API_BASE_URL}/api/opportunity-analytics`);
+      if (response.ok) {
+        const data = await response.json();
+        setAnalytics(data);
+      } else {
+        console.error('Failed to fetch analytics');
+      }
+    } catch (error) {
+      console.error('Error fetching analytics:', error);
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
 
   // Fetch opportunities from API with applications
   const fetchOpportunities = async () => {
@@ -191,6 +282,7 @@ const OpportunitiesAdmin: React.FC = () => {
 
   useEffect(() => {
     fetchOpportunities();
+    fetchAnalytics();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -343,6 +435,164 @@ const OpportunitiesAdmin: React.FC = () => {
           View and manage project opportunities from the database
         </p>
       </div>
+
+      {/* Analytics Dashboard */}
+      <Card>
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5" />
+              Opportunity Analytics
+            </CardTitle>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchAnalytics}
+                disabled={analyticsLoading}
+              >
+                {analyticsLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <Activity className="mr-2 h-4 w-4" />
+                    Refresh Analytics
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAnalytics(!showAnalytics)}
+              >
+                <Eye className="mr-2 h-4 w-4" />
+                {showAnalytics ? 'Hide' : 'Show'} Analytics
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        {showAnalytics && (
+          <CardContent>
+            {analytics ? (
+              <div className="space-y-6">
+                {/* Overview Metrics */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-blue-50 p-4 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Target className="h-5 w-5 text-blue-600" />
+                      <span className="text-sm font-medium text-blue-700">Total Opportunities</span>
+                    </div>
+                    <div className="text-2xl font-bold text-blue-900">
+                      {analytics.analytics.overview.total_opportunities}
+                    </div>
+                  </div>
+                  <div className="bg-green-50 p-4 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-5 w-5 text-green-600" />
+                      <span className="text-sm font-medium text-green-700">Success Rate</span>
+                    </div>
+                    <div className="text-2xl font-bold text-green-900">
+                      {analytics.analytics.overview.overall_success_rate}%
+                    </div>
+                  </div>
+                  <div className="bg-yellow-50 p-4 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-5 w-5 text-yellow-600" />
+                      <span className="text-sm font-medium text-yellow-700">Pending Apps</span>
+                    </div>
+                    <div className="text-2xl font-bold text-yellow-900">
+                      {analytics.analytics.overview.pending_applications}
+                    </div>
+                  </div>
+                  <div className="bg-purple-50 p-4 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-5 w-5 text-purple-600" />
+                      <span className="text-sm font-medium text-purple-700">Total Apps</span>
+                    </div>
+                    <div className="text-2xl font-bold text-purple-900">
+                      {analytics.analytics.overview.total_applications}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Top Skills in Demand */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h3 className="text-lg font-semibold mb-3">Top Skills in Demand</h3>
+                    <div className="space-y-2">
+                      {analytics.analytics.skills_demand.top_skills.slice(0, 5).map((skill, index) => (
+                        <div key={index} className="flex justify-between items-center p-2 bg-muted/50 rounded">
+                          <span className="font-medium">{skill.skill}</span>
+                          <Badge variant="secondary">{skill.demand_count} opportunities</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-lg font-semibold mb-3">Market Trends</h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">New Opportunities (30d)</span>
+                        <span className="font-semibold">{analytics.analytics.market_trends.opportunities_created_last_30_days}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Applications (30d)</span>
+                        <span className="font-semibold">{analytics.analytics.market_trends.applications_last_30_days}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Avg. Time to Fill</span>
+                        <span className="font-semibold">{analytics.analytics.market_trends.average_time_to_fill}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Opportunity Performance */}
+                <div>
+                  <h3 className="text-lg font-semibold mb-3">Top Performing Opportunities</h3>
+                  <div className="space-y-2">
+                    {analytics.analytics.opportunity_details
+                      .sort((a, b) => b.match_rate - a.match_rate)
+                      .slice(0, 3)
+                      .map((opp, index) => (
+                        <div key={index} className="flex justify-between items-center p-3 border rounded-lg">
+                          <div>
+                            <span className="font-medium">{opp.title}</span>
+                            <span className="text-muted-foreground ml-2">({opp.company})</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <Badge variant={opp.status === 'open' ? 'default' : 'secondary'}>
+                              {opp.status}
+                            </Badge>
+                            <span className="text-sm text-muted-foreground">
+                              {opp.total_applications} applications
+                            </span>
+                            <span className="font-semibold text-green-600">
+                              {opp.match_rate}% match rate
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                <div className="text-xs text-muted-foreground">
+                  Last updated: {new Date(analytics.analytics.last_updated).toLocaleString()}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">Click "Refresh Analytics" to load opportunity analytics</p>
+              </div>
+            )}
+          </CardContent>
+        )}
+      </Card>
 
       {/* Create New Opportunity Form */}
       <Card>

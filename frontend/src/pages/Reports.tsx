@@ -23,6 +23,8 @@ const API_BASE = 'http://localhost:8000';
 // Types for the reporting system
 interface ConsultantReport {
   success: boolean;
+  message?: string;
+  report_id?: string;
   report_type: string;
   consultant_email: string;
   generated_at: string;
@@ -33,8 +35,8 @@ interface ConsultantReport {
     performance_metrics: Record<string, unknown>;
     ai_insights: Record<string, unknown>;
     market_analysis: Record<string, unknown>;
+    competitiveness_analysis: Record<string, unknown>;
   };
-  real_time_data: Record<string, unknown>;
 }
 
 export default function Reports() {
@@ -43,7 +45,7 @@ export default function Reports() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Generate consultant report
+  // Generate consultant report using synced endpoint
   const generateConsultantReport = async () => {
     if (!consultantEmail.trim()) {
       toast({
@@ -58,8 +60,15 @@ export default function Reports() {
     setError(null);
     
     try {
+      // Use the synced endpoint to get clean skills
       const response = await fetch(
-        `${API_BASE}/api/reports/consultant/${encodeURIComponent(consultantEmail)}?report_type=comprehensive`
+        `${API_BASE}/api/reports/consultant/${consultantEmail}/synced`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        }
       );
       
       if (!response.ok) {
@@ -67,11 +76,43 @@ export default function Reports() {
       }
       
       const data = await response.json();
-      setConsultantReport(data);
+      
+      // Transform synced report data to match expected format
+      const transformedReport: ConsultantReport = {
+        success: data.status === 'success',
+        report_type: 'comprehensive',
+        consultant_email: consultantEmail,
+        generated_at: data.sync_info?.sync_timestamp || new Date().toISOString(),
+        report_data: {
+          consultant_overview: data.report_data?.consultant_profile || {},
+          skills_analysis: {
+            skills_by_category: {
+              'Technical Skills': (data.report_data?.skill_analysis?.technical_skills || []).map((skill: string) => ({
+                name: skill,
+                proficiency: 'intermediate'
+              })),
+              'Soft Skills': (data.report_data?.skill_analysis?.soft_skills || []).map((skill: string) => ({
+                name: skill,
+                proficiency: 'intermediate'
+              }))
+            },
+            total_skills: data.report_data?.skill_analysis?.skill_count || 0,
+            technical_skills_count: data.report_data?.skill_analysis?.technical_count || 0,
+            soft_skills_count: data.report_data?.skill_analysis?.soft_count || 0
+          },
+          opportunities_analysis: data.report_data?.opportunities_analysis || {},
+          performance_metrics: data.report_data?.performance_summary || {},
+          ai_insights: data.report_data?.ai_insights || { insights: [], recommendations: [] },
+          market_analysis: data.report_data?.market_analysis || {},
+          competitiveness_analysis: data.report_data?.competitiveness_analysis || {}
+        }
+      };
+      
+      setConsultantReport(transformedReport);
       
       toast({
-        title: "Success",
-        description: "AI report generated successfully!",
+        title: "Success", 
+        description: "Synced report generated successfully! Skills match profile.",
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
@@ -92,7 +133,17 @@ export default function Reports() {
     
     try {
       const response = await fetch(
-        `${API_BASE}/api/reports/export/${encodeURIComponent(consultantReport.consultant_email)}?format=${format}`
+        `${API_BASE}/api/reports/export`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            consultant_email: consultantReport.consultant_email,
+            format: format
+          })
+        }
       );
       
       if (!response.ok) {
@@ -177,37 +228,81 @@ export default function Reports() {
   const renderAIInsights = (insightsData: Record<string, unknown>) => {
     const insights = insightsData.insights as string[] || [];
     const recommendations = insightsData.recommendations as string[] || [];
+    const metadata = insightsData.analysis_metadata as Record<string, unknown> || {};
+    
+    // If no insights available, show informative empty state
+    if (insights.length === 0 && recommendations.length === 0) {
+      return (
+        <div className="space-y-4">
+          <div className="text-center py-8 text-muted-foreground">
+            <Brain className="h-12 w-12 mx-auto mb-4 opacity-50" />
+            <p className="text-lg font-medium">AI Analysis Complete</p>
+            <p className="text-sm">No specific insights generated for this consultant profile yet.</p>
+            <p className="text-xs mt-2">Generate a new report to refresh AI analysis.</p>
+          </div>
+        </div>
+      );
+    }
     
     return (
       <div className="space-y-4">
+        {/* Analysis Metadata */}
+        {metadata && Object.keys(metadata).length > 0 && (
+          <div className="bg-muted/30 p-3 rounded-lg">
+            <p className="text-xs text-muted-foreground mb-2">Analysis Details</p>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {metadata.confidence_score && (
+                <div>
+                  <span className="font-medium">Confidence: </span>
+                  <span className="text-green-600">{String(metadata.confidence_score)}%</span>
+                </div>
+              )}
+              {metadata.total_skills_analyzed && (
+                <div>
+                  <span className="font-medium">Skills Analyzed: </span>
+                  <span>{String(metadata.total_skills_analyzed)}</span>
+                </div>
+              )}
+              {metadata.analysis_method && (
+                <div className="col-span-2">
+                  <span className="font-medium">Method: </span>
+                  <span className="text-blue-600">{String(metadata.analysis_method)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        
+        {/* AI Insights */}
         {insights.length > 0 && (
           <div>
             <h4 className="font-semibold mb-2 flex items-center gap-2">
-              <Brain className="h-4 w-4" />
-              AI Insights
+              <Brain className="h-4 w-4 text-blue-600" />
+              AI Insights ({insights.length})
             </h4>
-            <ul className="space-y-1">
+            <ul className="space-y-2">
               {insights.map((insight, index) => (
-                <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
+                <li key={index} className="text-sm text-muted-foreground flex items-start gap-2 p-2 bg-green-50 rounded">
                   <CheckCircle2 className="h-3 w-3 mt-1 text-green-500 flex-shrink-0" />
-                  {insight}
+                  <span>{insight}</span>
                 </li>
               ))}
             </ul>
           </div>
         )}
         
+        {/* Recommendations */}
         {recommendations.length > 0 && (
           <div>
             <h4 className="font-semibold mb-2 flex items-center gap-2">
-              <Target className="h-4 w-4" />
-              Recommendations
+              <Target className="h-4 w-4 text-orange-600" />
+              AI Recommendations ({recommendations.length})
             </h4>
-            <ul className="space-y-1">
+            <ul className="space-y-2">
               {recommendations.map((rec, index) => (
-                <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
+                <li key={index} className="text-sm text-muted-foreground flex items-start gap-2 p-2 bg-blue-50 rounded">
                   <Zap className="h-3 w-3 mt-1 text-blue-500 flex-shrink-0" />
-                  {rec}
+                  <span>{rec}</span>
                 </li>
               ))}
             </ul>
@@ -377,21 +472,21 @@ export default function Reports() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="text-center p-4 bg-muted/50 rounded-lg">
                     <div className="text-2xl font-bold text-primary">
-                      {(consultantReport.real_time_data.current_skills_count as number) || 0}
+                      {(consultantReport.report_data.skills_analysis?.total_skills as number) || 0}
                     </div>
                     <div className="text-sm text-muted-foreground">Current Skills</div>
                   </div>
                   <div className="text-center p-4 bg-muted/50 rounded-lg">
                     <div className="text-2xl font-bold text-primary">
-                      {(consultantReport.real_time_data.recent_applications_count as number) || 0}
+                      {(consultantReport.report_data.opportunities_analysis?.total_applications as number) || 0}
                     </div>
-                    <div className="text-sm text-muted-foreground">Recent Applications</div>
+                    <div className="text-sm text-muted-foreground">Total Applications</div>
                   </div>
                   <div className="text-center p-4 bg-muted/50 rounded-lg">
                     <div className="text-2xl font-bold text-primary">
-                      {(consultantReport.real_time_data.has_recent_resume as boolean) ? 'Yes' : 'No'}
+                      {(consultantReport.report_data.performance_metrics?.opportunity_success_rate as number)?.toFixed(1) || 0}%
                     </div>
-                    <div className="text-sm text-muted-foreground">Recent Resume</div>
+                    <div className="text-sm text-muted-foreground">Success Rate</div>
                   </div>
                 </div>
               </CardContent>

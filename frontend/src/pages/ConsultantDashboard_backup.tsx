@@ -16,7 +16,9 @@ import {
   Brain,
   Zap,
   Star,
-  Target
+  Target,
+  RefreshCw,
+  Upload
 } from 'lucide-react';
 
 // API configuration
@@ -42,6 +44,9 @@ interface Consultant {
 function SkillsAnalysisCard({ userEmail }: { userEmail: string }) {
   const [skillsData, setSkillsData] = useState<SkillsAnalysisData | null>(null);
   const [loadingSkills, setLoadingSkills] = useState(false);
+  const [uploadingResume, setUploadingResume] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const fetchSkillsAnalysis = useCallback(async () => {
     if (!userEmail) return;
@@ -68,6 +73,56 @@ function SkillsAnalysisCard({ userEmail }: { userEmail: string }) {
       setLoadingSkills(false);
     }
   }, [userEmail]);
+
+  const handleResumeUpload = async () => {
+    if (!selectedFile) {
+      setUploadMessage('Please select a file to upload');
+      return;
+    }
+
+    if (!selectedFile.name.toLowerCase().endsWith('.pdf')) {
+      setUploadMessage('Please upload a PDF file only.');
+      return;
+    }
+
+    try {
+      setUploadingResume(true);
+      setUploadMessage('');
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('consultant_email', userEmail);
+
+      const response = await fetch(`${API_BASE_URL}/upload-resume`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setUploadMessage(`✅ Resume uploaded successfully! Analysis complete.`);
+        setSelectedFile(null);
+        // Refresh skills analysis
+        await fetchSkillsAnalysis();
+      } else {
+        setUploadMessage(`❌ Upload failed: ${result.detail}`);
+      }
+    } catch (error) {
+      setUploadMessage('❌ Upload failed. Please try again.');
+      console.error('Resume upload error:', error);
+    } finally {
+      setUploadingResume(false);
+    }
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      setUploadMessage('');
+    }
+  };
 
   useEffect(() => {
     fetchSkillsAnalysis();
@@ -179,44 +234,6 @@ function SkillsAnalysisCard({ userEmail }: { userEmail: string }) {
     </Card>
   );
 }
-import { useAuth } from '@/contexts/AuthContext';
-import { StatusCard } from '@/components/Dashboard/StatusCard';
-import { WorkflowProgressBar } from '@/components/Dashboard/WorkflowProgressBar';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import ConsultantOpportunityDashboard from "@/components/ConsultantOpportunityDashboard";
-import { 
-  FileText, 
-  Calendar, 
-  Briefcase, 
-  GraduationCap,
-  TrendingUp,
-  Brain,
-  Zap,
-  Star,
-  Target
-} from 'lucide-react';
-
-// API configuration
-const API_BASE_URL = 'http://localhost:8000';
-
-// Types
-interface SkillsAnalysisData {
-  ai_summary: string;
-  skills: string[];
-  competencies: string[];
-  ai_feedback: string;
-  ai_suggestions: string;
-  confidence_score: number;
-}
-
-interface Consultant {
-  id: number;
-  email: string;
-  name: string;
-}
 
 // Interfaces for API data
 interface ConsultantData {
@@ -253,292 +270,6 @@ interface TrainingModule {
   name: string;
   progress: number;
   status: string;
-}
-
-// Skills Analysis Component with Resume Upload
-function SkillsAnalysisCard({ userEmail }: { userEmail: string }) {
-  const [skillsData, setSkillsData] = useState<SkillsAnalysisData | null>(null);
-  const [loadingSkills, setLoadingSkills] = useState(false);
-  const [uploadingResume, setUploadingResume] = useState(false);
-  const [uploadMessage, setUploadMessage] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-
-  const fetchSkillsAnalysis = useCallback(async () => {
-    if (!userEmail) return;
-    
-    try {
-      setLoadingSkills(true);
-      // Find consultant ID first
-      const consultantsResponse = await fetch(`${API_BASE_URL}/api/consultants`);
-      if (!consultantsResponse.ok) return;
-      
-      const consultants: Consultant[] = await consultantsResponse.json();
-      const consultant = consultants.find((c: Consultant) => c.email === userEmail);
-      
-      if (consultant) {
-        const analysisResponse = await fetch(`${API_BASE_URL}/api/consultant/${consultant.id}/resume-analysis`);
-        if (analysisResponse.ok) {
-          const analysis: SkillsAnalysisData = await analysisResponse.json();
-          setSkillsData(analysis);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching skills analysis:', error);
-    } finally {
-      setLoadingSkills(false);
-    }
-  }, [userEmail]);
-
-  const handleResumeUpload = async () => {
-    if (!selectedFile) {
-      setUploadMessage('Please select a file to upload');
-      return;
-    }
-
-    if (!selectedFile.name.toLowerCase().endsWith('.pdf')) {
-      setUploadMessage('Please upload a PDF file only.');
-      return;
-    }
-
-    try {
-      setUploadingResume(true);
-      setUploadMessage('');
-
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-
-      const response = await fetch(`${API_BASE_URL}/api/consultant/${userEmail}/upload-resume-enhanced`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      const result = await response.json();
-
-      if (response.ok) {
-        setUploadMessage(`✅ Resume uploaded successfully! Extracted ${result.skills_extracted} skills.`);
-        setSelectedFile(null);
-        // Refresh skills analysis
-        await fetchSkillsAnalysis();
-      } else {
-        setUploadMessage(`❌ Upload failed: ${result.detail}`);
-      }
-    } catch (error) {
-      setUploadMessage('❌ Upload failed. Please try again.');
-      console.error('Resume upload error:', error);
-    } finally {
-      setUploadingResume(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchSkillsAnalysis();
-  }, [fetchSkillsAnalysis]);
-
-  if (loadingSkills) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Brain className="h-5 w-5 text-primary" />
-            AI Skills Analysis
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground">Loading skills analysis...</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (!skillsData) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Brain className="h-5 w-5 text-primary" />
-            AI Skills Analysis & Resume Upload
-          </CardTitle>
-          <CardDescription>
-            Upload your resume to get AI-powered skills analysis and skill assignment
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-muted-foreground">No resume analysis available. Upload your resume to get started with skill assignment!</p>
-          
-          {/* Resume Upload Section */}
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="resume-file" className="block text-sm font-medium text-gray-700 mb-2">
-                Select Resume File
-              </label>
-              <input
-                id="resume-file"
-                type="file"
-                accept=".pdf"
-                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-primary/90"
-              />
-              <p className="text-sm text-gray-500 mt-1">
-                Supported format: PDF only
-              </p>
-            </div>
-            
-            {selectedFile && (
-              <div className="p-3 bg-blue-50 rounded-lg">
-                <p className="text-sm text-blue-700">
-                  Selected: {selectedFile.name}
-                </p>
-              </div>
-            )}
-            
-            <Button 
-              onClick={handleResumeUpload}
-              disabled={!selectedFile || uploadingResume}
-              className="w-full"
-            >
-              {uploadingResume ? (
-                <>
-                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                  Processing Resume...
-                </>
-              ) : (
-                <>
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload & Analyze Resume
-                </>
-              )}
-            </Button>
-            
-            {/* Upload Message */}
-            {uploadMessage && (
-              <div className={`text-sm p-3 rounded ${uploadMessage.includes('✅') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                {uploadMessage}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Brain className="h-5 w-5 text-primary" />
-          AI Skills Analysis
-        </CardTitle>
-        <CardDescription>
-          Based on your latest resume analysis
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* AI Summary */}
-        <div className="space-y-2">
-          <h4 className="font-medium flex items-center gap-2">
-            <Zap className="h-4 w-4" />
-            AI Summary
-          </h4>
-          <p className="text-sm text-muted-foreground">{skillsData.ai_summary}</p>
-        </div>
-
-        {/* Extracted Skills */}
-        <div className="space-y-2">
-          <h4 className="font-medium">Technical Skills ({skillsData.skills?.length || 0})</h4>
-          <div className="flex flex-wrap gap-2">
-            {(skillsData.skills || []).slice(0, 10).map((skill: string, index: number) => (
-              <Badge key={index} variant="secondary" className="text-xs">
-                {skill}
-              </Badge>
-            ))}
-            {(skillsData.skills || []).length > 10 && (
-              <Badge variant="outline" className="text-xs">
-                +{(skillsData.skills || []).length - 10} more
-              </Badge>
-            )}
-          </div>
-        </div>
-
-        {/* Competencies */}
-        {skillsData.competencies && skillsData.competencies.length > 0 && (
-          <div className="space-y-2">
-            <h4 className="font-medium">Soft Skills</h4>
-            <div className="flex flex-wrap gap-2">
-              {skillsData.competencies.map((comp: string, index: number) => (
-                <Badge key={index} variant="outline" className="text-xs bg-blue-50 text-blue-700">
-                  {comp}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* AI Feedback */}
-        <div className="space-y-2">
-          <h4 className="font-medium">AI Feedback</h4>
-          <p className="text-sm text-muted-foreground">{skillsData.ai_feedback}</p>
-        </div>
-
-        {/* AI Suggestions */}
-        <div className="space-y-2">
-          <h4 className="font-medium">Skill Development Recommendations</h4>
-          <p className="text-sm text-muted-foreground">{skillsData.ai_suggestions}</p>
-        </div>
-
-        <div className="text-xs text-muted-foreground pt-2 border-t">
-          Analysis confidence: {Math.round((skillsData.confidence_score || 0) * 100)}%
-        </div>
-
-        {/* Upload New Resume Option */}
-        <div className="pt-4 border-t">
-          <div className="space-y-3">
-            <h4 className="font-medium">Update Resume</h4>
-            <div className="space-y-2">
-              <input
-                type="file"
-                accept=".pdf"
-                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-primary/90"
-              />
-              
-              {selectedFile && (
-                <div className="p-3 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-blue-700">
-                    Selected: {selectedFile.name}
-                  </p>
-                </div>
-              )}
-              
-              <Button 
-                onClick={handleResumeUpload}
-                disabled={!selectedFile || uploadingResume}
-                variant="outline"
-                size="sm"
-              >
-                {uploadingResume ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-4 h-4 mr-2" />
-                    Upload New Resume
-                  </>
-                )}
-              </Button>
-              
-              {uploadMessage && (
-                <div className={`text-sm p-3 rounded ${uploadMessage.includes('✅') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                  {uploadMessage}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
 }
 
 export default function ConsultantDashboard() {

@@ -168,15 +168,19 @@ class ProjectOpportunity(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     title = Column(String(200), nullable=False)
+    company = Column(String(200), nullable=False)
     description = Column(Text)
     client_name = Column(String(200))
     required_skills = Column(JSON)  # List of required skills
-    experience_level = Column(String(50))  # 'junior' | 'mid' | 'senior' | 'lead'
+    experience_required = Column(Integer, default=0)
+    experience_level = Column(String(50))  # 'junior' | 'intermediate' | 'senior' | 'lead'
+    location = Column(String(200))
     project_duration = Column(String(100))
     budget_range = Column(String(100))
     start_date = Column(String(50))
     end_date = Column(String(50))
     status = Column(String(50), default='open')  # 'open' | 'filled' | 'cancelled'
+    created_date = Column(String(50))
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -184,11 +188,12 @@ class ProjectOpportunity(Base):
     
     # Relationships
     applications = relationship("OpportunityApplication", back_populates="opportunity")
+    skill_gaps = relationship("OpportunitySkillGap", back_populates="opportunity")
 
 class OpportunityApplication(Base):
     __tablename__ = 'opportunity_applications'
     
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(String(50), primary_key=True)  # Changed to String to support custom IDs like app_25_xyz
     consultant_id = Column(Integer, ForeignKey('consultant_profiles.id'), nullable=False)
     opportunity_id = Column(Integer, ForeignKey('project_opportunities.id'), nullable=False)
     status = Column(String(50), default='applied')  # 'applied' | 'interview' | 'selected' | 'rejected'
@@ -375,6 +380,26 @@ class OpportunitySkillGap(Base):
     could_not_apply = Column(Boolean, default=True)  # Whether they couldn't apply due to skill gaps
     gap_severity = Column(String(20), default='medium')  # 'low', 'medium', 'high' - how many critical skills missing
     opportunity_priority = Column(String(20), default='medium')  # How attractive this opportunity was
+    
+    # Relationships
+    consultant = relationship("ConsultantProfile", foreign_keys=[consultant_id])
+    opportunity = relationship("ProjectOpportunity", foreign_keys=[opportunity_id])
+
+
+class ConsultantAssignment(Base):
+    __tablename__ = 'consultant_assignments'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    consultant_id = Column(Integer, ForeignKey('consultant_profiles.id'), nullable=False)
+    opportunity_id = Column(Integer, ForeignKey('project_opportunities.id'), nullable=False)
+    status = Column(String(50), default='active')  # 'active', 'completed', 'cancelled'
+    assigned_date = Column(DateTime, default=datetime.utcnow)
+    start_date = Column(DateTime)
+    end_date = Column(DateTime)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
     consultant = relationship("ConsultantProfile", foreign_keys=[consultant_id])

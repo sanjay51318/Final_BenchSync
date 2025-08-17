@@ -26,6 +26,9 @@ import {
   GraduationCap
 } from 'lucide-react';
 
+// API configuration
+const API_BASE_URL = 'http://localhost:8000';
+
 interface Skill {
   id: number;
   name: string;
@@ -49,16 +52,34 @@ interface ConsultantProfile {
 }
 
 interface ProfileData {
-  consultant: ConsultantProfile;
-  skills_by_category: { [key: string]: Skill[] };
-  total_skills: number;
-  resume_data: {
-    has_resume: boolean;
-    last_upload?: string;
-    extracted_skills_count: number;
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  location: string;
+  experience_years: number;
+  department: string;
+  primary_skill: string;
+  status: string;
+  attendance_rate: number;
+  training_status: string;
+  availability_status: string;
+  technical_skills: string[];
+  soft_skills: string[];
+  resume_analysis?: {
     ai_summary?: string;
     confidence_score?: number;
+    skills?: string[];
+    competencies?: string[];
+    analysis_method?: string;
+    file_name?: string;
+    created_at?: string;
   };
+  resume_status?: boolean;
+  resume_uploaded?: boolean;
+  has_resume_analysis?: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface TrainingModule {
@@ -107,8 +128,10 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [uploadingResume, setUploadingResume] = useState(false);
   const [addingSkill, setAddingSkill] = useState(false);
+  const [syncingSkills, setSyncingSkills] = useState(false);
   
   // Add skill form state
   const [newSkill, setNewSkill] = useState({
@@ -129,7 +152,7 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:8000/api/consultant/${consultantEmail}/profile`);
+      const response = await fetch(`${API_BASE_URL}/api/consultant/${consultantEmail}/profile`);
       const data = await response.json();
       
       if (response.ok) {
@@ -148,14 +171,14 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
   const fetchTrainingData = async () => {
     try {
       // Find consultant ID first
-      const consultantsResponse = await fetch('http://localhost:8000/api/consultants');
+      const consultantsResponse = await fetch(`${API_BASE_URL}/api/consultants`);
       if (!consultantsResponse.ok) return;
       
       const consultants: { id: number; email: string; name: string }[] = await consultantsResponse.json();
       const consultant = consultants.find((c) => c.email === consultantEmail);
       
       if (consultant) {
-        const trainingResponse = await fetch(`http://localhost:8000/api/consultant/${consultant.id}/training-dashboard`);
+        const trainingResponse = await fetch(`${API_BASE_URL}/api/consultant/${consultant.id}/training-dashboard`);
         if (trainingResponse.ok) {
           const training = await trainingResponse.json();
           setTrainingData(training);
@@ -180,7 +203,7 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
       const formData = new FormData();
       formData.append('file', selectedFile);
 
-      const response = await fetch(`http://localhost:8000/api/consultant/${consultantEmail}/upload-resume-enhanced`, {
+      const response = await fetch(`${API_BASE_URL}/api/consultant/${consultantEmail}/upload-resume-enhanced`, {
         method: 'POST',
         body: formData,
       });
@@ -206,7 +229,7 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
       setAddingSkill(true);
       setError('');
 
-      const response = await fetch(`http://localhost:8000/api/consultant/${consultantEmail}/add-skill`, {
+      const response = await fetch(`${API_BASE_URL}/api/consultant/${consultantEmail}/add-skill`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newSkill),
@@ -230,6 +253,36 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
       setError('Error adding skill');
     } finally {
       setAddingSkill(false);
+    }
+  };
+
+  const handleSyncSkills = async () => {
+    if (!profileData) return;
+    
+    setSyncingSkills(true);
+    setError('');
+    setSuccessMessage('');
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/consultant/${profileData.email}/sync-skills`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        setSuccessMessage(`Successfully synchronized ${data.total_new_skills} new skills from resume analysis!`);
+        fetchProfile(); // Refresh profile data to show synchronized skills
+      } else {
+        setError(data.detail || 'Failed to sync skills');
+      }
+    } catch (error) {
+      setError('Error syncing skills from resume analysis');
+    } finally {
+      setSyncingSkills(false);
     }
   };
 
@@ -342,6 +395,20 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
           </Alert>
         )}
 
+        {successMessage && (
+          <Alert className="mb-6 bg-blue-50 border-blue-200">
+            <CheckCircle className="h-4 w-4" />
+            <AlertDescription>{successMessage}</AlertDescription>
+          </Alert>
+        )}
+
+        {successMessage && (
+          <Alert className="mb-6 bg-blue-50 border-blue-200">
+            <CheckCircle className="h-4 w-4" />
+            <AlertDescription>{successMessage}</AlertDescription>
+          </Alert>
+        )}
+
         {profileData && (
           <div className="space-y-6">
             {/* Profile Overview */}
@@ -357,32 +424,32 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
                 <CardContent className="space-y-4">
                   <div>
                     <Label className="text-sm font-medium text-gray-500">Name</Label>
-                    <p className="text-lg font-semibold">{profileData.consultant.name}</p>
+                    <p className="text-lg font-semibold">{profileData.name}</p>
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-500">Email</Label>
-                    <p className="text-sm text-gray-700">{profileData.consultant.email}</p>
+                    <p className="text-sm text-gray-700">{profileData.email}</p>
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-500">Primary Skill</Label>
                     <Badge variant="secondary" className="mt-1">
-                      {profileData.consultant.primary_skill || 'Not set'}
+                      {profileData.primary_skill || 'Not set'}
                     </Badge>
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-500">Experience</Label>
                     <p className="text-sm text-gray-700">
-                      {profileData.consultant.years_of_experience || 0} years
+                      {profileData.experience_years || 0} years
                     </p>
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-500">Status</Label>
                     <Badge className={
-                      profileData.consultant.bench_status === 'available' 
+                      profileData.status === 'available' 
                         ? 'bg-green-100 text-green-800' 
                         : 'bg-yellow-100 text-yellow-800'
                     }>
-                      {profileData.consultant.bench_status}
+                      {profileData.status}
                     </Badge>
                   </div>
                 </CardContent>
@@ -399,23 +466,34 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
                 <CardContent className="space-y-4">
                   <div className="text-center">
                     <div className="text-3xl font-bold text-blue-600">
-                      {profileData.total_skills}
+                      {(profileData.technical_skills?.length || 0) + (profileData.soft_skills?.length || 0)}
                     </div>
                     <p className="text-sm text-gray-500">Total Skills</p>
                   </div>
                   
                   <div className="space-y-2">
-                    {Object.entries(profileData.skills_by_category).map(([category, skills]) => (
-                      <div key={category} className="flex justify-between items-center">
+                    {profileData.technical_skills && profileData.technical_skills.length > 0 && (
+                      <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600 capitalize flex items-center gap-1">
-                          <span>{getCategoryIcon(category)}</span>
-                          {category.replace('_', ' ')}
+                          <span>💻</span>
+                          Technical Skills
                         </span>
                         <Badge variant="outline" className="text-xs">
-                          {skills.length}
+                          {profileData.technical_skills.length}
                         </Badge>
                       </div>
-                    ))}
+                    )}
+                    {profileData.soft_skills && profileData.soft_skills.length > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600 capitalize flex items-center gap-1">
+                          <span>🤝</span>
+                          Soft Skills
+                        </span>
+                        <Badge variant="outline" className="text-xs">
+                          {profileData.soft_skills.length}
+                        </Badge>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -429,18 +507,36 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {profileData.resume_data?.has_resume ? (
+                  {profileData.resume_uploaded || profileData.has_resume_analysis ? (
                     <div className="space-y-3">
                       <div className="flex items-center gap-2">
                         <CheckCircle className="w-4 h-4 text-green-500" />
-                        <span className="text-sm text-green-700">Resume uploaded</span>
+                        <span className="text-sm text-green-700">
+                          Resume uploaded and analyzed
+                        </span>
+                        {profileData.resume_analysis?.analysis_method && (
+                          <Badge variant="secondary" className="text-xs">
+                            {profileData.resume_analysis.analysis_method}
+                          </Badge>
+                        )}
                       </div>
+                      
+                      {profileData.resume_analysis?.file_name && (
+                        <div>
+                          <Label className="text-sm font-medium text-gray-500">File Name</Label>
+                          <p className="text-sm text-gray-700">
+                            {profileData.resume_analysis.file_name}
+                          </p>
+                        </div>
+                      )}
                       
                       <div>
                         <Label className="text-sm font-medium text-gray-500">Last Upload</Label>
                         <p className="text-sm text-gray-700">
-                          {profileData.resume_data.last_upload 
-                            ? new Date(profileData.resume_data.last_upload).toLocaleDateString()
+                          {profileData.resume_analysis?.created_at 
+                            ? new Date(profileData.resume_analysis.created_at).toLocaleDateString()
+                            : profileData.updated_at
+                            ? new Date(profileData.updated_at).toLocaleDateString()
                             : 'Unknown'
                           }
                         </p>
@@ -449,30 +545,61 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
                       <div>
                         <Label className="text-sm font-medium text-gray-500">Extracted Skills</Label>
                         <p className="text-sm text-gray-700">
-                          {profileData.resume_data.extracted_skills_count} skills
+                          {(profileData.technical_skills?.length || 0) + (profileData.soft_skills?.length || 0)} skills
+                          <span className="text-xs text-gray-500 ml-2">
+                            ({profileData.technical_skills?.length || 0} technical, {profileData.soft_skills?.length || 0} soft)
+                          </span>
                         </p>
                       </div>
                       
-                      <div>
-                        <Label className="text-sm font-medium text-gray-500">AI Summary</Label>
-                        <p className="text-sm text-gray-700">
-                          {profileData.resume_data.ai_summary || 'No summary available'}
-                        </p>
-                      </div>
+                      {profileData.resume_analysis?.ai_summary && (
+                        <div>
+                          <Label className="text-sm font-medium text-gray-500">AI Summary</Label>
+                          <p className="text-sm text-gray-700">
+                            {profileData.resume_analysis.ai_summary}
+                          </p>
+                        </div>
+                      )}
                       
-                      {profileData.resume_data.confidence_score && (
+                      {profileData.resume_analysis?.confidence_score && (
                         <div>
                           <Label className="text-sm font-medium text-gray-500">Analysis Confidence</Label>
-                          <Badge className="bg-blue-100 text-blue-800">
-                            {(profileData.resume_data.confidence_score * 100).toFixed(0)}%
+                          <Badge 
+                            className={`${
+                              profileData.resume_analysis.confidence_score >= 0.8 
+                                ? 'bg-green-100 text-green-800' 
+                                : profileData.resume_analysis.confidence_score >= 0.6
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}
+                          >
+                            {(profileData.resume_analysis.confidence_score * 100).toFixed(0)}% confidence
                           </Badge>
                         </div>
                       )}
+                      
+                      {/* Upload new resume button */}
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => document.getElementById('file-upload')?.click()}
+                        className="w-full"
+                      >
+                        <Upload className="w-4 h-4 mr-2" />
+                        Update Resume
+                      </Button>
                     </div>
                   ) : (
                     <div className="text-center space-y-3">
                       <XCircle className="w-12 h-12 text-gray-400 mx-auto" />
                       <p className="text-sm text-gray-500">No resume uploaded</p>
+                      <Button 
+                        onClick={() => document.getElementById('file-upload')?.click()}
+                        className="w-full"
+                      >
+                        <Upload className="w-4 h-4 mr-2" />
+                        Upload Resume
+                      </Button>
                     </div>
                   )}
                 </CardContent>
@@ -493,14 +620,29 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
                 <div className="flex justify-between items-center">
                   <h3 className="text-xl font-semibold">My Skills</h3>
                   
-                  {/* Add Skill Dialog */}
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Skill
-                      </Button>
-                    </DialogTrigger>
+                  <div className="flex gap-2">
+                    {/* Sync Skills Button */}
+                    <Button 
+                      onClick={handleSyncSkills} 
+                      variant="outline"
+                      disabled={syncingSkills || !profileData?.resume_analysis}
+                    >
+                      {syncingSkills ? (
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                      )}
+                      Sync from Resume
+                    </Button>
+                    
+                    {/* Add Skill Dialog */}
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button>
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add Skill
+                        </Button>
+                      </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
                         <DialogTitle>Add New Skill</DialogTitle>
@@ -581,55 +723,54 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
                       </div>
                     </DialogContent>
                   </Dialog>
+                  </div>
                 </div>
 
                 {/* Skills by Category */}
                 <div className="space-y-6">
-                  {Object.entries(profileData.skills_by_category).map(([category, skills]) => (
-                    <Card key={category}>
+                  {/* Technical Skills */}
+                  {profileData.technical_skills && profileData.technical_skills.length > 0 && (
+                    <Card>
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-lg">
-                          <span>{getCategoryIcon(category)}</span>
-                          {category.replace('_', ' ').toUpperCase()}
-                          <Badge variant="outline">{skills.length}</Badge>
+                          <span>💻</span>
+                          TECHNICAL SKILLS
+                          <Badge variant="outline">{profileData.technical_skills.length}</Badge>
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {skills.map((skill) => (
-                            <div key={skill.id} className="border rounded-lg p-4 space-y-2">
-                              <div className="flex items-center justify-between">
-                                <h4 className="font-medium">{skill.name}</h4>
-                                {getSourceIcon(skill.source)}
-                              </div>
-                              
-                              <div className="flex items-center gap-2">
-                                <Badge className={getProficiencyColor(skill.proficiency_level)}>
-                                  {skill.proficiency_level}
-                                </Badge>
-                                <span className="text-xs text-gray-500">
-                                  {skill.years_experience}y exp
-                                </span>
-                              </div>
-                              
-                              <div className="text-xs text-gray-500 space-y-1">
-                                <div>Source: {skill.source}</div>
-                                {skill.confidence_score < 100 && (
-                                  <div>Confidence: {skill.confidence_score}%</div>
-                                )}
-                                {skill.source === 'manual' && (
-                                  <div className="text-green-600 flex items-center gap-1">
-                                    <CheckCircle className="w-3 h-3" />
-                                    Manual Entry
-                                  </div>
-                                )}
-                              </div>
-                            </div>
+                        <div className="flex flex-wrap gap-2">
+                          {profileData.technical_skills.map((skill, index) => (
+                            <Badge key={index} variant="secondary">
+                              {skill}
+                            </Badge>
                           ))}
                         </div>
                       </CardContent>
                     </Card>
-                  ))}
+                  )}
+
+                  {/* Soft Skills */}
+                  {profileData.soft_skills && profileData.soft_skills.length > 0 && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                          <span>🤝</span>
+                          SOFT SKILLS
+                          <Badge variant="outline">{profileData.soft_skills.length}</Badge>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex flex-wrap gap-2">
+                          {profileData.soft_skills.map((skill, index) => (
+                            <Badge key={index} variant="outline">
+                              {skill}
+                            </Badge>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
                 </div>
               </TabsContent>
 
@@ -831,7 +972,7 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-sm text-gray-600">Total Skills</p>
-                          <p className="text-2xl font-bold">{profileData.total_skills}</p>
+                          <p className="text-2xl font-bold">{(profileData.technical_skills?.length || 0) + (profileData.soft_skills?.length || 0)}</p>
                         </div>
                         <TrendingUp className="w-8 h-8 text-blue-500" />
                       </div>
@@ -844,7 +985,7 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
                         <div>
                           <p className="text-sm text-gray-600">Resume Skills</p>
                           <p className="text-2xl font-bold">
-                            {profileData.resume_data?.extracted_skills_count || 0}
+                            {(profileData.technical_skills?.length || 0) + (profileData.soft_skills?.length || 0)}
                           </p>
                         </div>
                         <FileText className="w-8 h-8 text-green-500" />
@@ -856,11 +997,9 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
                     <CardContent className="p-6">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-sm text-gray-600">Manual Skills</p>
+                          <p className="text-sm text-gray-600">Technical Skills</p>
                           <p className="text-2xl font-bold">
-                            {Object.values(profileData.skills_by_category)
-                              .flat()
-                              .filter(skill => skill.source === 'manual').length}
+                            {profileData.technical_skills?.length || 0}
                           </p>
                         </div>
                         <User className="w-8 h-8 text-purple-500" />
@@ -872,11 +1011,9 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
                     <CardContent className="p-6">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-sm text-gray-600">Manual Skills</p>
+                          <p className="text-sm text-gray-600">Soft Skills</p>
                           <p className="text-2xl font-bold">
-                            {Object.values(profileData.skills_by_category)
-                              .flat()
-                              .filter(skill => skill.source === 'manual').length}
+                            {profileData.soft_skills?.length || 0}
                           </p>
                         </div>
                         <Award className="w-8 h-8 text-yellow-500" />
@@ -889,6 +1026,21 @@ const ConsultantProfile = ({ consultantEmail }: { consultantEmail: string }) => 
           </div>
         )}
       </div>
+      
+      {/* Hidden file input for resume upload buttons in profile cards */}
+      <input
+        id="file-upload"
+        type="file"
+        accept=".pdf,.txt,.docx"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            setSelectedFile(file);
+            handleResumeUpload();
+          }
+        }}
+        style={{ display: 'none' }}
+      />
     </div>
   );
 };

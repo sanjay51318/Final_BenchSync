@@ -22,18 +22,47 @@ class ProfessionalReportClient:
     async def generate_consultant_report(self, consultant_email: str, report_type: str = "comprehensive") -> Dict[str, Any]:
         """Generate comprehensive consultant report"""
         try:
-            # For now, return a comprehensive mock report structure
-            # In production, this would connect to the MCP server
-            
-            report_data = {
-                "success": True,
-                "report_type": report_type,
-                "consultant_email": consultant_email,
-                "generated_at": datetime.now().isoformat(),
-                "report_data": await self._generate_mock_report(consultant_email, report_type)
-            }
-            
-            return report_data
+            # Try to connect to actual MCP server first
+            try:
+                from mcp_servers.professional_report_generator_server import ProfessionalReportGenerator
+                
+                # Create report generator instance
+                report_generator = ProfessionalReportGenerator()
+                
+                # Generate actual report
+                report_result = await report_generator.generate_consultant_report(consultant_email, report_type)
+                
+                if "error" not in report_result:
+                    return {
+                        "success": True,
+                        "report_type": report_type,
+                        "consultant_email": consultant_email,
+                        "generated_at": datetime.now().isoformat(),
+                        "report_data": report_result,
+                        "source": "mcp_server"
+                    }
+                else:
+                    logger.warning(f"MCP server error: {report_result.get('error')}")
+                    # Fall back to mock data
+                    raise Exception(report_result.get('error'))
+                    
+            except Exception as mcp_error:
+                logger.warning(f"MCP server unavailable: {mcp_error}, using fallback")
+                # Fall back to basic report generation
+                
+                # For now, return a comprehensive mock report structure
+                # In production, this would connect to the MCP server
+                
+                report_data = {
+                    "success": True,
+                    "report_type": report_type,
+                    "consultant_email": consultant_email,
+                    "generated_at": datetime.now().isoformat(),
+                    "report_data": await self._generate_mock_report(consultant_email, report_type),
+                    "source": "fallback_mock"
+                }
+                
+                return report_data
             
         except Exception as e:
             logger.error(f"Report generation failed: {str(e)}")

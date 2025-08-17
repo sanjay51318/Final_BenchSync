@@ -181,12 +181,25 @@ function SkillsAnalysisCard({ userEmail }: { userEmail: string }) {
 }
 
 // Interfaces for API data
+interface AttendanceData {
+  user_name: string;
+  user_email: string;
+  attendance_rate: number;
+  total_days: number;
+  present_days: number;
+  absent_days: number;
+  leave_days: number;
+  period_days: number;
+}
+
 interface ConsultantData {
   resumeStatus: string;
   attendanceReport: {
     completed: number;
     missed: number;
     total: number;
+    rate: number;
+    details?: AttendanceData;
   };
   opportunities: number;
   trainingProgress: string;
@@ -230,6 +243,15 @@ interface TrainingRecommendation {
   missing_skill?: string;
   opportunities_count?: number;
   sample_opportunities?: string[];
+  duration_hours?: number;
+  provider?: string;
+  cost?: number;
+  difficulty?: string;
+  rating?: number;
+  certification_available?: boolean;
+  url?: string;
+  recommendation_score?: number;
+  ai_generated?: boolean;
 }
 
 interface SkillGap {
@@ -269,14 +291,19 @@ export default function ConsultantDashboard() {
   const [loading, setLoading] = useState(true);
   const [uploadingResume, setUploadingResume] = useState(false);
   const [uploadMessage, setUploadMessage] = useState('');
+  const [enrollmentLoading, setEnrollmentLoading] = useState(false);
+  const [refreshingTraining, setRefreshingTraining] = useState(false);
 
   // Resume upload handler
   const handleResumeUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setUploadMessage('Please upload a PDF file only.');
+    // Allow both PDF and TXT files for testing
+    const allowedExtensions = ['.pdf', '.txt'];
+    const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+    if (!allowedExtensions.includes(fileExtension)) {
+      setUploadMessage('Please upload a PDF or TXT file only.');
       return;
     }
 
@@ -317,6 +344,8 @@ export default function ConsultantDashboard() {
     if (!user?.email) return;
     
     try {
+      setRefreshingTraining(true);
+      
       // Find consultant ID first
       const consultantsResponse = await fetch(`${API_BASE_URL}/api/consultants`);
       if (!consultantsResponse.ok) return;
@@ -328,13 +357,121 @@ export default function ConsultantDashboard() {
         const trainingResponse = await fetch(`${API_BASE_URL}/api/consultant/${consultant.id}/training-dashboard`);
         if (trainingResponse.ok) {
           const training = await trainingResponse.json();
+          console.log('Training data received:', training);
+          console.log('Current enrollments:', training.current_enrollments);
           setTrainingData(training);
         }
       }
     } catch (error) {
       console.error('Error fetching training data:', error);
+    } finally {
+      setRefreshingTraining(false);
     }
   }, [user?.email]);
+
+  // Handle training enrollment
+  const handleTrainingEnrollment = async (course: {
+    name?: string;
+    title?: string;
+    provider?: string;
+    duration_hours?: number;
+    cost?: number;
+    difficulty?: string;
+  }) => {
+    if (!user?.email) return;
+    
+    try {
+      setEnrollmentLoading(true);
+      
+      // Find consultant ID first
+      const consultantsResponse = await fetch(`${API_BASE_URL}/api/consultants`);
+      if (!consultantsResponse.ok) return;
+      
+      const consultants: Consultant[] = await consultantsResponse.json();
+      const consultant = consultants.find((c: Consultant) => c.email === user.email);
+      
+      if (consultant) {
+        // Enroll in training
+        const enrollResponse = await fetch(`${API_BASE_URL}/api/consultant/${consultant.id}/enroll-training`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            training_program: course.name || course.title,
+            provider: course.provider,
+            duration_hours: course.duration_hours
+          })
+        });
+        
+        if (enrollResponse.ok) {
+          const enrollResult = await enrollResponse.json();
+          
+          // Update progress to simulate starting the course
+          const progressResponse = await fetch(`${API_BASE_URL}/api/consultant/${consultant.id}/update-training-progress`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              progress_percentage: 10, // Start with 10% to show enrollment
+              training_program: course.name || course.title
+            })
+          });
+          
+          if (progressResponse.ok) {
+            // Refresh all data to show updated progress
+            await fetchTrainingData();
+            await fetchConsultantData();
+            
+            // Simulate progress updates over time
+            setTimeout(async () => {
+              await updateTrainingProgress(consultant.id, course.name || course.title, 30);
+            }, 5000); // Update to 30% after 5 seconds
+            
+            setTimeout(async () => {
+              await updateTrainingProgress(consultant.id, course.name || course.title, 65);
+            }, 10000); // Update to 65% after 10 seconds
+            
+            setTimeout(async () => {
+              await updateTrainingProgress(consultant.id, course.name || course.title, 100);
+            }, 15000); // Complete after 15 seconds
+            
+            alert(`Successfully enrolled in ${course.name || course.title}! Watch your progress update automatically.`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error enrolling in training:', error);
+      alert('Failed to enroll in training. Please try again.');
+    } finally {
+      setEnrollmentLoading(false);
+    }
+  };
+
+  // Function to update training progress
+  const updateTrainingProgress = async (consultantId: number, trainingProgram: string, progressPercentage: number) => {
+    try {
+      const progressResponse = await fetch(`${API_BASE_URL}/api/consultant/${consultantId}/update-training-progress`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          progress_percentage: progressPercentage,
+          training_program: trainingProgram
+        })
+      });
+      
+      if (progressResponse.ok) {
+        // Refresh data to show updated progress
+        await fetchTrainingData();
+        await fetchConsultantData();
+      }
+    } catch (error) {
+      console.error('Error updating training progress:', error);
+    }
+  };
 
   // Fetch consultant-specific data
   const fetchConsultantData = useCallback(async () => {
@@ -353,7 +490,8 @@ export default function ConsultantDashboard() {
           attendanceReport: {
             completed: Math.floor(data.attendance_rate || 0),
             missed: Math.max(0, 100 - Math.floor(data.attendance_rate || 0)),
-            total: 100
+            total: 100,
+            rate: data.attendance_rate || 0
           },
           opportunities: data.opportunities_count || 0,
           trainingProgress: data.training_progress || 'not-started',
@@ -384,6 +522,15 @@ export default function ConsultantDashboard() {
     fetchConsultantData();
     fetchTrainingData();
   }, [fetchConsultantData, fetchTrainingData]);
+
+  // Auto-refresh training data every 5 seconds to show progress updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchTrainingData();
+    }, 5000); // Refresh every 5 seconds for faster updates
+
+    return () => clearInterval(interval);
+  }, [fetchTrainingData]);
 
   if (loading) {
     return (
@@ -474,12 +621,12 @@ export default function ConsultantDashboard() {
                 htmlFor="resume-upload" 
                 className={`block w-full text-xs py-2 px-3 border border-dashed border-gray-300 rounded-md text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors ${uploadingResume ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                {uploadingResume ? 'Uploading...' : 'Upload New Resume (PDF)'}
+                {uploadingResume ? 'Uploading...' : 'Upload New Resume (PDF/TXT)'}
               </label>
               <input
                 id="resume-upload"
                 type="file"
-                accept=".pdf"
+                accept=".pdf,.txt"
                 onChange={handleResumeUpload}
                 disabled={uploadingResume}
                 className="hidden"
@@ -515,9 +662,35 @@ export default function ConsultantDashboard() {
         
         <StatusCard
           title="Training Progress"
-          value="67%"
-          status={consultantData.trainingProgress as 'completed' | 'in-progress' | 'pending'}
-          description="2 of 3 modules completed"
+          value={(() => {
+            if (trainingData?.current_enrollments && trainingData.current_enrollments.length > 0) {
+              // Calculate average progress from current enrollments
+              const totalProgress = trainingData.current_enrollments.reduce((sum, enrollment) => 
+                sum + (enrollment.progress_percentage || 0), 0);
+              const averageProgress = Math.round(totalProgress / trainingData.current_enrollments.length);
+              return `${averageProgress}%`;
+            }
+            return consultantData?.trainingProgress || "0%";
+          })()}
+          status={(() => {
+            if (trainingData?.current_enrollments && trainingData.current_enrollments.length > 0) {
+              const completedCount = trainingData.current_enrollments.filter(e => e.status === 'completed').length;
+              const totalCount = trainingData.current_enrollments.length;
+              if (completedCount === totalCount) return 'completed';
+              if (completedCount > 0 || trainingData.current_enrollments.some(e => e.status === 'in_progress')) return 'in-progress';
+              return 'pending';
+            }
+            return consultantData.trainingProgress as 'completed' | 'in-progress' | 'pending';
+          })()}
+          description={(() => {
+            if (trainingData?.current_enrollments && trainingData.current_enrollments.length > 0) {
+              const completedCount = trainingData.current_enrollments.filter(e => e.status === 'completed').length;
+              const totalCount = trainingData.current_enrollments.length;
+              const lastUpdated = new Date().toLocaleTimeString();
+              return `${completedCount} of ${totalCount} courses completed • Updated: ${lastUpdated}`;
+            }
+            return "No active training courses";
+          })()}
           icon={<GraduationCap className="h-4 w-4" />}
         />
       </div>
@@ -533,6 +706,19 @@ export default function ConsultantDashboard() {
             <CardTitle className="flex items-center gap-2">
               <GraduationCap className="h-5 w-5 text-primary" aria-hidden="true" />
               Training & Development Dashboard
+              <div className="ml-auto flex items-center gap-2">
+                {refreshingTraining && (
+                  <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full"></div>
+                )}
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => fetchTrainingData()}
+                  disabled={refreshingTraining}
+                >
+                  Refresh
+                </Button>
+              </div>
             </CardTitle>
             <CardDescription>
               Your personalized learning journey with AI-powered recommendations
@@ -547,49 +733,92 @@ export default function ConsultantDashboard() {
               
               <TabsContent value="current" className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {(trainingData?.current_enrollments || consultantData.trainingModules).map((module) => (
-                    <div key={module.id} className="p-4 border rounded-lg bg-card">
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="font-medium text-foreground">{module.name || module.program_name}</h4>
-                        <Badge 
-                          className={module.status === 'completed' ? 'bg-status-completed text-white' : 'bg-status-in-progress text-white'}
-                        >
-                          {module.progress || module.progress_percentage}%
-                        </Badge>
-                      </div>
-                      <div className="w-full bg-muted rounded-full h-2 mb-2">
-                        <div 
-                          className={`h-2 rounded-full transition-all duration-300 ${
-                            module.status === 'completed' ? 'bg-status-completed' : 'bg-status-in-progress'
-                          }`}
-                          style={{ width: `${module.progress || module.progress_percentage}%` }}
-                          role="progressbar"
-                          aria-valuenow={module.progress || module.progress_percentage}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                          aria-label={`${module.name || module.program_name} progress: ${module.progress || module.progress_percentage}%`}
-                        />
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {module.description || module.category || 'Building your expertise in this area'}
-                      </p>
-                      <div className="mt-2 flex items-center justify-between">
-                        <span className="text-xs text-muted-foreground">
-                          Status: {module.status === 'completed' ? 'Completed' : module.status === 'in_progress' ? 'In Progress' : 'Enrolled'}
-                        </span>
-                        <Button variant="outline" size="sm">
-                          Continue
-                        </Button>
-                      </div>
-                      {module.estimated_completion && (
-                        <div className="mt-2 text-xs text-muted-foreground">
-                          Target completion: {module.estimated_completion}
+                  {/* Show training data from API first, then fall back to consultant data */}
+                  {trainingData?.current_enrollments && trainingData.current_enrollments.length > 0 ? (
+                    trainingData.current_enrollments.map((module) => (
+                      <div key={module.id} className="p-4 border rounded-lg bg-card">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-medium text-foreground">{module.program_name}</h4>
+                          <Badge 
+                            className={module.status === 'completed' ? 'bg-status-completed text-white' : 'bg-status-in-progress text-white'}
+                          >
+                            {module.progress_percentage}%
+                          </Badge>
                         </div>
-                      )}
-                    </div>
-                  ))}
-                  {(!trainingData?.current_enrollments || trainingData.current_enrollments.length === 0) && 
-                   consultantData.trainingModules.length === 0 && (
+                        <div className="w-full bg-muted rounded-full h-2 mb-2">
+                          <div 
+                            className={`h-2 rounded-full transition-all duration-300 ${
+                              module.status === 'completed' ? 'bg-status-completed' : 'bg-status-in-progress'
+                            }`}
+                            style={{ width: `${module.progress_percentage}%` }}
+                            role="progressbar"
+                            aria-valuenow={module.progress_percentage}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-label={`${module.program_name} progress: ${module.progress_percentage}%`}
+                          />
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {module.category || 'Building your expertise in this area'}
+                        </p>
+                        <div className="mt-2 flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">
+                            Status: {module.status === 'completed' ? 'Completed' : module.status === 'in_progress' ? 'In Progress' : 'Enrolled'}
+                          </span>
+                          <Button variant="outline" size="sm">
+                            Continue
+                          </Button>
+                        </div>
+                        {module.estimated_completion && (
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            Target completion: {module.estimated_completion}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  ) : consultantData?.trainingModules && consultantData.trainingModules.length > 0 ? (
+                    consultantData.trainingModules.map((module) => (
+                      <div key={module.id} className="p-4 border rounded-lg bg-card">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-medium text-foreground">{module.name}</h4>
+                          <Badge 
+                            className={module.status === 'completed' ? 'bg-status-completed text-white' : 'bg-status-in-progress text-white'}
+                          >
+                            {module.progress}%
+                          </Badge>
+                        </div>
+                        <div className="w-full bg-muted rounded-full h-2 mb-2">
+                          <div 
+                            className={`h-2 rounded-full transition-all duration-300 ${
+                              module.status === 'completed' ? 'bg-status-completed' : 'bg-status-in-progress'
+                            }`}
+                            style={{ width: `${module.progress}%` }}
+                            role="progressbar"
+                            aria-valuenow={module.progress}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-label={`${module.name} progress: ${module.progress}%`}
+                          />
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {module.description || 'Building your expertise in this area'}
+                        </p>
+                        <div className="mt-2 flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">
+                            Status: {module.status === 'completed' ? 'Completed' : module.status === 'in_progress' ? 'In Progress' : 'Enrolled'}
+                          </span>
+                          <Button variant="outline" size="sm">
+                            Continue
+                          </Button>
+                        </div>
+                        {module.estimated_completion && (
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            Target completion: {module.estimated_completion}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  ) : (
                     <div className="col-span-2 text-center py-8">
                       <GraduationCap className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                       <p className="text-muted-foreground">No active training programs</p>
@@ -626,16 +855,34 @@ export default function ConsultantDashboard() {
                                     {course.sample_opportunities.length > 2 && ` +${course.sample_opportunities.length - 2} more`}
                                   </p>
                                 )}
-                                <Badge 
-                                  variant={course.priority === 'High' ? 'destructive' : course.priority === 'Medium' ? 'default' : 'secondary'} 
-                                  className="mt-2"
-                                >
-                                  {course.priority} Priority
-                                </Badge>
+                                <div className="flex items-center gap-2 mt-2">
+                                  <Badge 
+                                    variant={course.priority === 'High' ? 'destructive' : course.priority === 'Medium' ? 'default' : 'secondary'} 
+                                  >
+                                    {course.priority} Priority
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    {course.duration_hours || 40}h • {course.provider || 'Professional Training'} • ${course.cost || 0}
+                                  </span>
+                                </div>
                               </div>
-                              <Button variant="outline" size="sm" className="ml-4">
-                                Enroll Now
-                              </Button>
+                              <div className="flex flex-col gap-2 ml-4">
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={() => handleTrainingEnrollment(course)}
+                                  disabled={enrollmentLoading}
+                                >
+                                  {enrollmentLoading ? 'Enrolling...' : 'Enroll Now'}
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  onClick={() => updateTrainingProgress(1, course.name, Math.floor(Math.random() * 100))}
+                                >
+                                  Demo Progress
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         ))
@@ -658,8 +905,18 @@ export default function ConsultantDashboard() {
                                   {skillData.priority || 'High'} Priority
                                 </Badge>
                               </div>
-                              <Button variant="outline" size="sm" className="ml-4">
-                                Find Training
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="ml-4"
+                                onClick={() => handleTrainingEnrollment({
+                                  name: `${skillData.skill} Training`,
+                                  provider: 'Professional Development',
+                                  duration_hours: 40
+                                })}
+                                disabled={enrollmentLoading}
+                              >
+                                {enrollmentLoading ? 'Enrolling...' : 'Find Training'}
                               </Button>
                             </div>
                           </div>

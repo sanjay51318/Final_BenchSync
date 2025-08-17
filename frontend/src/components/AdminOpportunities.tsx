@@ -11,6 +11,20 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Plus, Search, Filter, Users, TrendingUp, Clock, DollarSign, Brain } from 'lucide-react';
 
+interface Application {
+  id: string;
+  consultant_id: string;
+  consultant_name: string;
+  consultant_email: string;
+  consultant_skills: string[];
+  experience_years: number;
+  status: string;
+  applied_date: string;
+  applied_at: string;
+  cover_letter: string;
+  proposed_rate?: string;
+}
+
 interface Opportunity {
   id: number;
   title: string;
@@ -21,11 +35,13 @@ interface Opportunity {
   project_duration?: string;
   budget_range?: string;
   status: string;
-  ai_score: number;
+  ai_score?: number;
   ai_recommendations?: string;
   created_at: string;
   start_date?: string;
   end_date?: string;
+  applications?: Application[];
+  accepted_count?: number;
 }
 
 interface Analytics {
@@ -54,6 +70,7 @@ const AdminOpportunities = () => {
   const [analytics, setAnalytics] = useState<Analytics>({});
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
+  const [activeTab, setActiveTab] = useState('details');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [error, setError] = useState('');
@@ -62,10 +79,13 @@ const AdminOpportunities = () => {
   // Form state for creating opportunities
   const [newOpportunity, setNewOpportunity] = useState({
     title: '',
-    description: '',
+    company: 'Default Company', // Hidden field with default value
     client_name: '',
+    description: '',
     required_skills: '',
-    experience_level: 'mid',
+    experience_required: 1,
+    location: 'Remote', // Hidden field with default value
+    status: 'open',
     project_duration: '',
     budget_range: '',
     start_date: '',
@@ -87,11 +107,11 @@ const AdminOpportunities = () => {
         params.append('status', statusFilter);
       }
       
-      const response = await fetch(`http://localhost:8000/api/opportunities?${params}`);
+      const response = await fetch(`http://localhost:8000/api/opportunities-with-applications?${params}`);
       const data = await response.json();
       
       if (response.ok) {
-        setOpportunities(data.opportunities || []);
+        setOpportunities(data || []);
       } else {
         setError(data.detail || 'Failed to fetch opportunities');
       }
@@ -125,12 +145,19 @@ const AdminOpportunities = () => {
         .map(skill => skill.trim())
         .filter(skill => skill);
 
+      // Only send fields that the backend expects
       const opportunityData = {
-        ...newOpportunity,
+        title: newOpportunity.title,
+        company: newOpportunity.company,
+        client_name: newOpportunity.client_name,
+        description: newOpportunity.description,
         required_skills: skillsArray,
-        start_date: newOpportunity.start_date || null,
-        end_date: newOpportunity.end_date || null
+        experience_required: newOpportunity.experience_required,
+        location: newOpportunity.location,
+        status: newOpportunity.status
       };
+
+      console.log('Sending opportunity data:', opportunityData); // Debug log
 
       const response = await fetch('http://localhost:8000/api/opportunities', {
         method: 'POST',
@@ -143,14 +170,17 @@ const AdminOpportunities = () => {
       const data = await response.json();
 
       if (response.ok) {
-        setSuccess(`Opportunity created successfully! AI Score: ${data.ai_score}`);
+        setSuccess('Opportunity created successfully!');
         setIsCreateDialogOpen(false);
         setNewOpportunity({
           title: '',
-          description: '',
+          company: 'Default Company', // Reset to default
           client_name: '',
+          description: '',
           required_skills: '',
-          experience_level: 'mid',
+          experience_required: 1,
+          location: 'Remote', // Reset to default
+          status: 'open',
           project_duration: '',
           budget_range: '',
           start_date: '',
@@ -159,10 +189,24 @@ const AdminOpportunities = () => {
         fetchOpportunities();
         fetchAnalytics();
       } else {
-        setError(data.detail || 'Failed to create opportunity');
+        console.error('Error response:', data); // Debug log
+        if (data.detail) {
+          if (Array.isArray(data.detail)) {
+            // Handle validation errors from Pydantic
+            const errorMessages = data.detail.map(err => `${err.loc?.[1] || 'Field'}: ${err.msg}`).join(', ');
+            setError(`Validation errors: ${errorMessages}`);
+          } else if (typeof data.detail === 'string') {
+            setError(data.detail);
+          } else {
+            setError('Failed to create opportunity');
+          }
+        } else {
+          setError('Failed to create opportunity');
+        }
       }
     } catch (error) {
-      setError('Error creating opportunity');
+      console.error('Network or other error:', error); // Debug log
+      setError('Error creating opportunity: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -194,6 +238,31 @@ const AdminOpportunities = () => {
       case 'senior': return 'bg-purple-100 text-purple-800';
       case 'architect': return 'bg-orange-100 text-orange-800';
       default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const handleApplicationAction = async (applicationId, action) => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/opportunity-applications/${applicationId}/${action}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        // Refresh opportunities to get updated application status
+        await fetchOpportunities();
+        // Show success message
+        setError(`Application ${action}ed successfully`);
+        // Clear success message after 3 seconds
+        setTimeout(() => setError(''), 3000);
+      } else {
+        const errorData = await response.json();
+        setError(errorData.detail || `Failed to ${action} application`);
+      }
+    } catch (error) {
+      setError(`Error ${action}ing application`);
     }
   };
 
@@ -282,21 +351,16 @@ const AdminOpportunities = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="experience_level">Experience Level</Label>
-                  <Select
-                    value={newOpportunity.experience_level}
-                    onValueChange={(value) => setNewOpportunity({...newOpportunity, experience_level: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="junior">Junior</SelectItem>
-                      <SelectItem value="mid">Mid-Level</SelectItem>
-                      <SelectItem value="senior">Senior</SelectItem>
-                      <SelectItem value="architect">Architect</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="experience_required">Experience Required (Years)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="50"
+                    value={newOpportunity.experience_required}
+                    onChange={(e) => setNewOpportunity({...newOpportunity, experience_required: parseInt(e.target.value) || 0})}
+                    placeholder="3"
+                    required
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -401,17 +465,6 @@ const AdminOpportunities = () => {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">AI Match Score</p>
-                  <p className="text-2xl font-bold text-orange-600">{analytics.ai_metrics?.avg_match_score || 0}</p>
-                </div>
-                <Brain className="h-8 w-8 text-orange-600" />
-              </div>
-            </CardContent>
-          </Card>
         </div>
       )}
 
@@ -491,13 +544,6 @@ const AdminOpportunities = () => {
                   </div>
                   
                   <div className="text-right">
-                    <div className="flex items-center gap-1 mb-2">
-                      <Brain className="w-4 h-4 text-blue-600" />
-                      <span className="text-sm font-medium text-blue-600">
-                        AI Score: {(opportunity.ai_score * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                    
                     {opportunity.project_duration && (
                       <div className="flex items-center gap-1 text-sm text-gray-600">
                         <Clock className="w-4 h-4" />
@@ -514,14 +560,21 @@ const AdminOpportunities = () => {
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={() => setSelectedOpportunity(opportunity)}
+                      onClick={() => {
+                        setSelectedOpportunity(opportunity);
+                        setActiveTab('details');
+                      }}
                     >
                       View Details
                     </Button>
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={() => window.open(`/api/opportunities/${opportunity.id}/applications`, '_blank')}
+                      onClick={() => {
+                        console.log('View Applications clicked for opportunity:', opportunity.id);
+                        setSelectedOpportunity(opportunity);
+                        setActiveTab('applications');
+                      }}
                     >
                       View Applications
                     </Button>
@@ -549,7 +602,7 @@ const AdminOpportunities = () => {
               </DialogDescription>
             </DialogHeader>
 
-            <Tabs defaultValue="details" className="w-full">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="details">Details</TabsTrigger>
                 <TabsTrigger value="ai-analysis">AI Analysis</TabsTrigger>
@@ -600,31 +653,140 @@ const AdminOpportunities = () => {
                     AI Analysis Results
                   </h4>
                   
-                  <div className="bg-blue-50 p-4 rounded-lg">
-                    <p className="text-lg font-medium text-blue-900 mb-2">
-                      AI Score: {(selectedOpportunity.ai_score * 100).toFixed(0)}%
-                    </p>
-                    
-                    {selectedOpportunity.ai_recommendations && (
-                      <div>
-                        <h5 className="font-medium text-blue-800 mb-1">AI Recommendations:</h5>
-                        <p className="text-blue-700">{selectedOpportunity.ai_recommendations}</p>
-                      </div>
-                    )}
-                  </div>
+                  {selectedOpportunity.applications && selectedOpportunity.applications.length > 0 ? (
+                    <div className="space-y-4">
+                      <h5 className="font-medium text-gray-700">Skills Match Analysis:</h5>
+                      {selectedOpportunity.applications.map((application) => {
+                        // Calculate skills match percentage
+                        const requiredSkills = selectedOpportunity.required_skills || [];
+                        const consultantSkills = application.consultant_skills || [];
+                        
+                        const matchedSkills = requiredSkills.filter(skill => 
+                          consultantSkills.some(cSkill => 
+                            cSkill.toLowerCase().includes(skill.toLowerCase()) || 
+                            skill.toLowerCase().includes(cSkill.toLowerCase())
+                          )
+                        );
+                        
+                        const matchPercentage = requiredSkills.length > 0 
+                          ? Math.round((matchedSkills.length / requiredSkills.length) * 100) 
+                          : 0;
+                        
+                        return (
+                          <div key={application.id} className="bg-blue-50 p-4 rounded-lg border">
+                            <div className="flex items-center justify-between mb-2">
+                              <h6 className="font-medium text-blue-900">{application.consultant_name}</h6>
+                              <div className="flex items-center gap-2">
+                                <Badge 
+                                  variant={matchPercentage >= 70 ? "default" : matchPercentage >= 40 ? "secondary" : "destructive"}
+                                >
+                                  {matchPercentage}% Match
+                                </Badge>
+                              </div>
+                            </div>
+                            <p className="text-sm text-blue-700">
+                              Matched {matchedSkills.length} out of {requiredSkills.length} required skills
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="bg-blue-50 p-4 rounded-lg">
+                      <p className="text-blue-700">No applications to analyze yet.</p>
+                    </div>
+                  )}
+                  
+                  {selectedOpportunity.ai_recommendations && (
+                    <div className="bg-blue-50 p-4 rounded-lg mt-4">
+                      <h5 className="font-medium text-blue-800 mb-1">AI Recommendations:</h5>
+                      <p className="text-blue-700">{selectedOpportunity.ai_recommendations}</p>
+                    </div>
+                  )}
                 </div>
               </TabsContent>
 
               <TabsContent value="applications">
-                <div className="text-center py-8">
-                  <p className="text-gray-500">Applications view would be loaded here</p>
-                  <Button 
-                    variant="outline" 
-                    className="mt-4"
-                    onClick={() => window.open(`http://localhost:8000/api/opportunities/${selectedOpportunity.id}/applications`, '_blank')}
-                  >
-                    View Applications API
-                  </Button>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-semibold">Applications ({selectedOpportunity.applications?.length || 0})</h4>
+                    <Badge variant="secondary">
+                      {selectedOpportunity.accepted_count || 0} Accepted
+                    </Badge>
+                  </div>
+                  
+                  {selectedOpportunity.applications && selectedOpportunity.applications.length > 0 ? (
+                    <div className="space-y-4">
+                      {selectedOpportunity.applications.map((application) => (
+                        <Card key={application.id} className="border-l-4 border-l-blue-500">
+                          <CardContent className="p-4">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <h5 className="font-medium">{application.consultant_name}</h5>
+                                  <Badge 
+                                    variant={
+                                      application.status === 'accepted' ? 'default' :
+                                      application.status === 'rejected' ? 'destructive' : 
+                                      'secondary'
+                                    }
+                                  >
+                                    {application.status}
+                                  </Badge>
+                                </div>
+                                
+                                <p className="text-sm text-gray-600 mb-2">{application.consultant_email}</p>
+                                <p className="text-sm mb-2">
+                                  <strong>Experience:</strong> {application.experience_years} years
+                                </p>
+                                <p className="text-sm mb-2">
+                                  <strong>Skills:</strong> {application.consultant_skills.join(', ')}
+                                </p>
+                                {application.proposed_rate && (
+                                  <p className="text-sm mb-2">
+                                    <strong>Proposed Rate:</strong> {application.proposed_rate}
+                                  </p>
+                                )}
+                                <p className="text-sm mb-2">
+                                  <strong>Applied:</strong> {new Date(application.applied_at).toLocaleDateString()}
+                                </p>
+                                
+                                {application.cover_letter && (
+                                  <div className="mt-3 p-3 bg-gray-50 rounded">
+                                    <p className="text-sm"><strong>Cover Letter:</strong></p>
+                                    <p className="text-sm text-gray-700 mt-1">{application.cover_letter}</p>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {application.status === 'pending' && (
+                                <div className="flex gap-2 ml-4">
+                                  <Button 
+                                    size="sm" 
+                                    onClick={() => handleApplicationAction(application.id, 'accept')}
+                                    className="bg-green-600 hover:bg-green-700"
+                                  >
+                                    Accept
+                                  </Button>
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                    onClick={() => handleApplicationAction(application.id, 'reject')}
+                                  >
+                                    Reject
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className="text-gray-500">No applications received yet</p>
+                    </div>
+                  )}
                 </div>
               </TabsContent>
             </Tabs>
